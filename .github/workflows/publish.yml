@@ -3,12 +3,14 @@ name: Publish
 on:
   workflow_dispatch:
   push:
+    branches: [main, master]
     tags:
       - "v*"
 
 jobs:
   publish-crates-io:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startswith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
       - name: Set up Rust
@@ -19,8 +21,8 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Package check
-        run: cargo package --locked --allow-dirty
+        run: cargo package --locked -p greentic-distributor-client
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked
+        run: cargo publish --locked -p greentic-distributor-client

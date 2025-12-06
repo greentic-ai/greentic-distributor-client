@@ -24,4 +24,4 @@ jobs:
       - name: test
         run: cargo test --all-features
       - name: package
-        run: cargo package --locked
+        run: cargo package --locked -p greentic-distributor-client
