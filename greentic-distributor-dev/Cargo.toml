@@ -9,7 +9,7 @@ homepage = "https://github.com/greentic"
 readme = "README.md"
 
 [dependencies]
-greentic-distributor-client = { path = ".." }
+greentic-distributor-client = { path = "..", version = "0.4" }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

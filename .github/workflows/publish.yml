@@ -20,9 +20,15 @@ jobs:
           override: true
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      - name: Package check
+      - name: Package check (client)
         run: cargo package --locked -p greentic-distributor-client
-      - name: Publish
+      - name: Package check (dev)
+        run: cargo package --locked -p greentic-distributor-dev
+      - name: Publish client
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish --locked -p greentic-distributor-client
+      - name: Publish dev
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked -p greentic-distributor-dev
