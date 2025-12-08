@@ -1,0 +1,15 @@
+[package]
+name = "greentic-distributor-dev"
+version = "0.1.0"
+edition = "2024"
+description = "Dev-only distributor source that serves packs and components from the local filesystem."
+license = "MIT"
+repository = "https://github.com/greentic/greentic-distributor-client"
+homepage = "https://github.com/greentic"
+readme = "README.md"
+
+[dependencies]
+greentic-distributor-client = { path = ".." }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,5 +1,6 @@
 pub mod config;
 pub mod error;
+pub mod source;
 pub mod types;
 
 mod http;
@@ -8,6 +9,7 @@ mod wit_client;
 pub use config::DistributorClientConfig;
 pub use error::DistributorError;
 pub use http::HttpDistributorClient;
+pub use source::{ChainedDistributorSource, DistributorSource};
 pub use types::*;
 pub use wit_client::{
     DistributorApiBindings, GeneratedDistributorApiBindings, WitDistributorClient,

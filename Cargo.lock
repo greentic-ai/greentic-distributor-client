@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-distributor-client"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -461,6 +461,7 @@ dependencies = [
  "httpmock",
  "reqwest",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
  "thiserror",
@@ -468,10 +469,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "greentic-distributor-dev"
+version = "0.1.0"
+dependencies = [
+ "greentic-distributor-client",
+ "tempfile",
+]
+
+[[package]]
 name = "greentic-interfaces-guest"
-version = "0.4.50"
+version = "0.4.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "831088115b8c22b6057487059602b50eb180d65f409507929c1d06cc346968ad"
+checksum = "02246ffc9c2258b6c9c9154f784adea8fdf73c7a8fb19c2c01cd76026388edba"
 dependencies = [
  "greentic-types",
  "wit-bindgen 0.48.1",

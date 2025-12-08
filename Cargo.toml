@@ -1,6 +1,6 @@
 [package]
 name = "greentic-distributor-client"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "Client trait plus HTTP and WIT implementations for the greentic:distributor-api@1.0.0 distributor resolver."
 license = "MIT"
@@ -9,6 +9,10 @@ homepage = "https://github.com/greentic"
 readme = "README.md"
 keywords = ["greentic", "distributor", "wasm", "wit", "http"]
 categories = ["network-programming", "web-programming::http-client", "wasm"]
+
+[workspace]
+members = [".", "greentic-distributor-dev"]
+resolver = "2"
 
 [dependencies]
 async-trait = "0.1"
@@ -20,6 +24,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 anyhow = "1"
 greentic-types = "0.4"
-greentic-interfaces-guest = { version = "0.4.50", features = ["distributor-api", "distributor-api-imports"] }
+greentic-interfaces-guest = { version = "0.4", features = ["distributor-api", "distributor-api-imports"] }
+semver = "1"
 [dev-dependencies]
 httpmock = "0.8"

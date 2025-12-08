@@ -4,3 +4,5 @@ pub use greentic_types::{
 };
 
 pub use greentic_types::{ComponentId, EnvId, PackId, TenantId};
+
+pub use semver::Version;

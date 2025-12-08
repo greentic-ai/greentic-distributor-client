@@ -42,3 +42,17 @@ println!("artifact: {:?}", resp.artifact);
 
 For WIT, implement `DistributorApiBindings` using the generated `greentic_interfaces_guest::distributor_api` functions and pass it to `WitDistributorClient`.
 `GeneratedDistributorApiBindings` is provided for WASM targets. On non-WASM targets it returns an error; prefer `HttpDistributorClient` there.
+
+## Local dev distributor
+Use the companion `greentic-distributor-dev` crate to serve packs/components from a local directory, useful for greentic-dev and conformance tests:
+
+```rust
+use greentic_distributor_client::{ChainedDistributorSource, DistributorSource, PackId, Version};
+use greentic_distributor_dev::{DevConfig, DevDistributorSource};
+
+let dev_source = DevDistributorSource::new(DevConfig::default());
+let sources = ChainedDistributorSource::new(vec![Box::new(dev_source)]);
+
+let pack_bytes = sources.fetch_pack(&PackId::try_from("dev.local.hello-flow")?, &Version::parse("0.1.0")?);
+println!("Loaded {} bytes", pack_bytes.len());
+```
