@@ -8,8 +8,9 @@ on:
       - "v*"
 
 jobs:
-  checks:
+  publish-crates-io:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startswith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
       - name: Set up Rust
@@ -26,20 +27,6 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Tests
         run: cargo test --workspace --locked
-
-  publish-crates-io:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startswith(github.ref, 'refs/tags/v')
-    needs: checks
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
       - name: Package check (client)
         run: cargo package --locked -p greentic-distributor-client
       - name: Package check (dev)
@@ -58,7 +45,7 @@ jobs:
             set -e
             printf '%s\n' "$output"
             if [ $status -ne 0 ]; then
-              if echo "$output" | grep -qi "already uploaded"; then
+              if echo "$output" | grep -Eqi "already uploaded|already exists"; then
                 echo "${pkg} already published; skipping."
               else
                 exit $status
