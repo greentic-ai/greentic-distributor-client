@@ -1,6 +1,6 @@
 [package]
 name = "greentic-distributor-dev"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 description = "Dev-only distributor source that serves packs and components from the local filesystem."
 license = "MIT"
@@ -9,7 +9,7 @@ homepage = "https://github.com/greentic"
 readme = "README.md"
 
 [dependencies]
-greentic-distributor-client = { path = "..", version = "0.4" }
+greentic-distributor-client = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

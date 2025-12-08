@@ -14,8 +14,13 @@ categories = ["network-programming", "web-programming::http-client", "wasm"]
 members = [".", "greentic-distributor-dev"]
 resolver = "2"
 
+[workspace.package]
+version = "0.4.1"
+edition = "2024"
+
 [workspace.dependencies]
 tempfile = "3"
+greentic-distributor-client = { path = ".", version = "0.4.1" }
 
 [dependencies]
 async-trait = "0.1"
