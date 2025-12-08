@@ -1,6 +1,6 @@
 [package]
 name = "greentic-distributor-client"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 description = "Client trait plus HTTP and WIT implementations for the greentic:distributor-api@1.0.0 distributor resolver."
 license = "MIT"
