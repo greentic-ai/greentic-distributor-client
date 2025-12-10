@@ -1,3 +1,5 @@
+#![cfg(feature = "http-runtime")]
+
 use greentic_distributor_client::{
     CacheInfo, ComponentDigest, ComponentStatus, DistributorClient, DistributorClientConfig,
     DistributorEnvironmentId, EnvId, HttpDistributorClient, ResolveComponentRequest,

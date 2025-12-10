@@ -2,6 +2,10 @@ use crate::{DistributorEnvironmentId, TenantCtx};
 use std::{collections::HashMap, time::Duration};
 
 /// Configuration for distributor clients.
+///
+/// NOTE: `base_url`, `auth_token`, and header fields are used when the
+/// `http-runtime` feature is enabled. Without that feature, the WIT client is
+/// the primary implementation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DistributorClientConfig {
     pub base_url: Option<String>,

@@ -132,7 +132,11 @@ where
             .bindings
             .resolve_component(wit_req)
             .await
-            .map_err(|e| DistributorError::Wit(e.to_string()))?;
+            .map_err(|e| {
+                // TODO: once distributor-api exposes structured errors, map to
+                // NotFound/PermissionDenied instead of a generic Wit error.
+                DistributorError::Wit(e.to_string())
+            })?;
         from_wit_response(resp)
     }
 

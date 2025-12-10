@@ -5,9 +5,7 @@ use crate::{
 use async_trait::async_trait;
 use reqwest::{StatusCode, header::HeaderMap};
 
-// NOTE: The runtime HTTP JSON contract mirrors greentic-types::distributor DTOs
-// (serde field names). If WIT or types change, keep HTTP aligned by serializing
-// those DTOs directly rather than introducing a separate schema.
+// Runtime HTTP JSON contract mirrors greentic-types::distributor DTOs (serde field names).
 #[derive(Clone)]
 pub struct HttpDistributorClient {
     http: reqwest::Client,

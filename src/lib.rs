@@ -3,11 +3,13 @@ pub mod error;
 pub mod source;
 pub mod types;
 
+#[cfg(feature = "http-runtime")]
 mod http;
 mod wit_client;
 
 pub use config::DistributorClientConfig;
 pub use error::DistributorError;
+#[cfg(feature = "http-runtime")]
 pub use http::HttpDistributorClient;
 pub use source::{ChainedDistributorSource, DistributorSource};
 pub use types::*;
