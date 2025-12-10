@@ -1,9 +1,13 @@
+use std::io;
+
 #[cfg(feature = "http-runtime")]
 use reqwest::StatusCode;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum DistributorError {
+    #[error("io error: {0}")]
+    Io(#[from] io::Error),
     #[cfg(feature = "http-runtime")]
     #[error("http error: {0}")]
     Http(#[from] reqwest::Error),
