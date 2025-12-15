@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use greentic_distributor_client::{
     ArtifactLocation, ComponentDigest, ComponentStatus, DistributorApiBindings, DistributorClient,
-    DistributorEnvironmentId, EnvId, ResolveComponentRequest, TenantCtx, TenantId,
-    WitDistributorClient,
+    DistributorEnvironmentId, EnvId, ResolveComponentRequest, SecretFormat, SecretScope, TenantCtx,
+    TenantId, WitDistributorClient,
 };
 use greentic_interfaces_guest::distributor_api as wit;
+use greentic_interfaces_guest::bindings::greentic_distributor_api_1_0_0_distributor_api::greentic::secrets_types::types as wit_secrets;
 use serde_json::json;
 
 #[derive(Clone)]
@@ -35,7 +36,19 @@ impl DistributorApiBindings for DummyBindings {
                 last_used_utc: "2024-01-01T00:00:00Z".into(),
                 last_refreshed_utc: "2024-01-01T00:00:00Z".into(),
             },
-            secret_requirements: vec![],
+            secret_requirements: vec![wit::SecretRequirement {
+                key: "TEST_API_KEY".into(),
+                required: true,
+                description: Some("API key".into()),
+                scope: Some(wit_secrets::SecretScope {
+                    env: "dev".into(),
+                    tenant: "tenant-a".into(),
+                    team: None,
+                }),
+                format: Some(wit_secrets::SecretFormat::Text),
+                schema: None,
+                examples: vec!["abc123".into()],
+            }],
         };
         Ok(response)
     }
@@ -63,10 +76,14 @@ impl DistributorApiBindings for DummyBindings {
         Ok(wit::PackStatusResponse {
             status: format!("status-{pack_id}"),
             secret_requirements: vec![wit::SecretRequirement {
-                key: "api-key".into(),
+                key: "TEST_API_KEY".into(),
                 required: true,
-                description: Some("key".into()),
-                scope: None,
+                description: Some("pack status key".into()),
+                scope: Some(wit_secrets::SecretScope {
+                    env: "dev".into(),
+                    tenant: "tenant-a".into(),
+                    team: None,
+                }),
                 format: None,
                 schema: None,
                 examples: vec![],
@@ -114,6 +131,22 @@ async fn wit_resolve_component_translation() {
             "sha256:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff".into()
         )
     );
+    let reqs = resp
+        .secret_requirements
+        .expect("secret requirements present");
+    assert_eq!(reqs.len(), 1);
+    let req = &reqs[0];
+    assert_eq!(req.key.as_str(), "TEST_API_KEY");
+    assert!(req.required);
+    assert_eq!(
+        req.scope,
+        Some(SecretScope {
+            env: "dev".into(),
+            tenant: "tenant-a".into(),
+            team: None
+        })
+    );
+    assert_eq!(req.format, Some(SecretFormat::Text));
 }
 
 #[tokio::test]
@@ -131,6 +164,28 @@ async fn wit_get_pack_status_json_round_trip() {
         .await
         .unwrap();
     assert_eq!(value["tenant"], "tenant-a");
+}
+
+#[tokio::test]
+async fn wit_pack_status_v2_maps_secret_requirements() {
+    let client = WitDistributorClient::new(DummyBindings);
+    let status = client
+        .get_pack_status_v2(
+            &TenantCtx::new(
+                EnvId::try_from("dev").unwrap(),
+                TenantId::try_from("tenant-a").unwrap(),
+            ),
+            &DistributorEnvironmentId::from("env-1"),
+            "pack-123",
+        )
+        .await
+        .unwrap();
+    assert_eq!(status.status, "status-pack-123");
+    let secrets = status
+        .secret_requirements
+        .expect("secret requirements threaded through");
+    assert_eq!(secrets.len(), 1);
+    assert_eq!(secrets[0].key.as_str(), "TEST_API_KEY");
 }
 
 #[tokio::test]

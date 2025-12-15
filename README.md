@@ -31,10 +31,14 @@ let resp = client.resolve_component(ResolveComponentRequest {
     extra: json!({}),
 }).await?;
 println!("artifact: {:?}", resp.artifact);
-println!("secret requirements: {:?}", resp.secret_requirements);
+if let Some(reqs) = resp.secret_requirements.as_ref() {
+    println!("secret requirements: {:?}", reqs);
+}
 ```
 
 `GeneratedDistributorApiBindings` calls the distributor imports on WASM targets. On non-WASM targets it returns an error; consumers can provide their own bindings implementation for testing.
+
+`secret_requirements` is present when talking to distributor versions that support it; otherwise it is `None`. When requirements are returned, run `greentic-secrets init --pack <pack-id>` ahead of time so secrets are available to the runtime.
 
 ### HTTP runtime client (feature `http-runtime`)
 Enable the feature and construct `HttpDistributorClient`:
@@ -72,7 +76,9 @@ let resp = client.resolve_component(ResolveComponentRequest {
     extra: json!({}),
 }).await?;
 println!("artifact: {:?}", resp.artifact);
-println!("secret requirements: {:?}", resp.secret_requirements);
+if let Some(reqs) = resp.secret_requirements.as_ref() {
+    println!("secret requirements: {:?}", reqs);
+}
 ```
 
 Fetch typed pack status (includes secret requirements):
@@ -85,7 +91,10 @@ let status = client
         "pack-123",
     )
     .await?;
-println!("status: {}, secrets: {:?}", status.status, status.secret_requirements);
+println!(
+    "status: {}, secrets: {:?}",
+    status.status, status.secret_requirements
+);
 ```
 
 ### Using greentic-config-types (host-resolved config)

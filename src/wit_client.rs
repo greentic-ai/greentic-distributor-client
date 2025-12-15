@@ -279,9 +279,32 @@ fn from_wit_pack_status(
 }
 
 fn from_wit_secret_requirements(
-    reqs: Vec<wit_secrets::SecretRequirement>,
-) -> Result<Vec<SecretRequirement>, DistributorError> {
-    reqs.into_iter().map(from_wit_secret_requirement).collect()
+    reqs: impl WitSecretRequirementsExt,
+) -> Result<Option<Vec<SecretRequirement>>, DistributorError> {
+    reqs.into_optional_vec()
+        .map(|requirements| {
+            requirements
+                .into_iter()
+                .map(from_wit_secret_requirement)
+                .collect()
+        })
+        .transpose()
+}
+
+trait WitSecretRequirementsExt {
+    fn into_optional_vec(self) -> Option<Vec<wit_secrets::SecretRequirement>>;
+}
+
+impl WitSecretRequirementsExt for Vec<wit_secrets::SecretRequirement> {
+    fn into_optional_vec(self) -> Option<Vec<wit_secrets::SecretRequirement>> {
+        Some(self)
+    }
+}
+
+impl WitSecretRequirementsExt for Option<Vec<wit_secrets::SecretRequirement>> {
+    fn into_optional_vec(self) -> Option<Vec<wit_secrets::SecretRequirement>> {
+        self
+    }
 }
 
 fn from_wit_secret_requirement(

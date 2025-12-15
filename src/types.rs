@@ -19,16 +19,16 @@ pub struct ResolveComponentResponse {
     pub artifact: ArtifactLocation,
     pub signature: SignatureSummary,
     pub cache: CacheInfo,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub secret_requirements: Vec<SecretRequirement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_requirements: Option<Vec<SecretRequirement>>,
 }
 
 /// Typed pack status response that carries secret requirements.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackStatusResponse {
     pub status: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub secret_requirements: Vec<SecretRequirement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_requirements: Option<Vec<SecretRequirement>>,
     #[serde(default)]
     pub extra: Value,
 }
