@@ -1,6 +1,6 @@
 use crate::{
     DistributorClient, DistributorClientConfig, DistributorEnvironmentId, DistributorError,
-    ResolveComponentRequest, ResolveComponentResponse, TenantCtx,
+    PackStatusResponse, ResolveComponentRequest, ResolveComponentResponse, TenantCtx,
 };
 use async_trait::async_trait;
 use reqwest::{StatusCode, header::HeaderMap};
@@ -97,6 +97,27 @@ impl DistributorClient for HttpDistributorClient {
         pack_id: &str,
     ) -> Result<serde_json::Value, DistributorError> {
         let url = format!("{}/distributor-api/pack-status", self.base_url()?);
+        let response = self
+            .http
+            .get(url)
+            .headers(self.headers()?)
+            .query(&[
+                ("tenant_id", tenant.tenant_id.as_str()),
+                ("environment_id", env.as_str()),
+                ("pack_id", pack_id),
+            ])
+            .send()
+            .await?;
+        self.handle_response(response).await
+    }
+
+    async fn get_pack_status_v2(
+        &self,
+        tenant: &TenantCtx,
+        env: &DistributorEnvironmentId,
+        pack_id: &str,
+    ) -> Result<PackStatusResponse, DistributorError> {
+        let url = format!("{}/distributor-api/pack-status-v2", self.base_url()?);
         let response = self
             .http
             .get(url)

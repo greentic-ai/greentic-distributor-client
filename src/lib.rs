@@ -34,6 +34,13 @@ pub trait DistributorClient: Send + Sync {
         pack_id: &str,
     ) -> Result<serde_json::Value, DistributorError>;
 
+    async fn get_pack_status_v2(
+        &self,
+        tenant: &TenantCtx,
+        env: &DistributorEnvironmentId,
+        pack_id: &str,
+    ) -> Result<PackStatusResponse, DistributorError>;
+
     async fn warm_pack(
         &self,
         tenant: &TenantCtx,

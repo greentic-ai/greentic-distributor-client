@@ -1,12 +1,14 @@
 use crate::{ArtifactLocation, CacheInfo, SignatureSummary};
 use crate::{ComponentDigest, ComponentStatus};
 use crate::{
-    DistributorClient, DistributorEnvironmentId, DistributorError, ResolveComponentRequest,
-    ResolveComponentResponse, TenantCtx,
+    DistributorClient, DistributorEnvironmentId, DistributorError, PackStatusResponse,
+    ResolveComponentRequest, ResolveComponentResponse, SecretFormat, SecretKey, SecretRequirement,
+    SecretScope, TenantCtx,
 };
 use anyhow::anyhow;
 use async_trait::async_trait;
 use greentic_interfaces_guest::distributor_api as wit;
+use greentic_interfaces_guest::bindings::greentic_distributor_api_1_0_0_distributor_api::greentic::secrets_types::types as wit_secrets;
 #[cfg(target_arch = "wasm32")]
 use greentic_interfaces_guest::distributor_api::DistributorApiImports;
 use serde_json::Value;
@@ -24,6 +26,13 @@ pub trait DistributorApiBindings: Send + Sync {
         environment_id: &str,
         pack_id: &str,
     ) -> Result<String, anyhow::Error>;
+
+    async fn get_pack_status_v2(
+        &self,
+        tenant_id: &str,
+        environment_id: &str,
+        pack_id: &str,
+    ) -> Result<wit::PackStatusResponse, anyhow::Error>;
 
     async fn warm_pack(
         &self,
@@ -78,6 +87,30 @@ impl DistributorApiBindings for GeneratedDistributorApiBindings {
         {
             let api = DistributorApiImports::new();
             Ok(api.get_pack_status(
+                &tenant_id.to_string(),
+                &environment_id.to_string(),
+                &pack_id.to_string(),
+            ))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (tenant_id, environment_id, pack_id);
+            Err(anyhow!(
+                "distributor-api imports are only available on wasm32 targets"
+            ))
+        }
+    }
+
+    async fn get_pack_status_v2(
+        &self,
+        tenant_id: &str,
+        environment_id: &str,
+        pack_id: &str,
+    ) -> Result<wit::PackStatusResponse, anyhow::Error> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let api = DistributorApiImports::new();
+            Ok(api.get_pack_status_v2(
                 &tenant_id.to_string(),
                 &environment_id.to_string(),
                 &pack_id.to_string(),
@@ -154,6 +187,20 @@ where
         serde_json::from_str(&payload).map_err(DistributorError::Serde)
     }
 
+    async fn get_pack_status_v2(
+        &self,
+        tenant: &TenantCtx,
+        env: &DistributorEnvironmentId,
+        pack_id: &str,
+    ) -> Result<PackStatusResponse, DistributorError> {
+        let payload = self
+            .bindings
+            .get_pack_status_v2(tenant.tenant_id.as_str(), env.as_str(), pack_id)
+            .await
+            .map_err(|e| DistributorError::Wit(e.to_string()))?;
+        from_wit_pack_status(payload)
+    }
+
     async fn warm_pack(
         &self,
         tenant: &TenantCtx,
@@ -217,5 +264,57 @@ fn from_wit_response(
         artifact,
         signature,
         cache,
+        secret_requirements: from_wit_secret_requirements(resp.secret_requirements)?,
     })
+}
+
+fn from_wit_pack_status(
+    resp: wit::PackStatusResponse,
+) -> Result<PackStatusResponse, DistributorError> {
+    Ok(PackStatusResponse {
+        status: resp.status,
+        secret_requirements: from_wit_secret_requirements(resp.secret_requirements)?,
+        extra: serde_json::from_str(&resp.extra)?,
+    })
+}
+
+fn from_wit_secret_requirements(
+    reqs: Vec<wit_secrets::SecretRequirement>,
+) -> Result<Vec<SecretRequirement>, DistributorError> {
+    reqs.into_iter().map(from_wit_secret_requirement).collect()
+}
+
+fn from_wit_secret_requirement(
+    req: wit_secrets::SecretRequirement,
+) -> Result<SecretRequirement, DistributorError> {
+    let key = SecretKey::parse(&req.key).map_err(|e| {
+        DistributorError::InvalidResponse(format!("invalid secret key `{}`: {e}", req.key))
+    })?;
+    let scope = req.scope.map(|scope| SecretScope {
+        env: scope.env,
+        tenant: scope.tenant,
+        team: scope.team,
+    });
+    let format = req.format.map(from_wit_secret_format);
+    let schema = match req.schema {
+        Some(schema) => Some(serde_json::from_str(&schema)?),
+        None => None,
+    };
+    let mut requirement = SecretRequirement::default();
+    requirement.key = key;
+    requirement.required = req.required;
+    requirement.description = req.description;
+    requirement.scope = scope;
+    requirement.format = format;
+    requirement.schema = schema;
+    requirement.examples = req.examples;
+    Ok(requirement)
+}
+
+fn from_wit_secret_format(format: wit_secrets::SecretFormat) -> SecretFormat {
+    match format {
+        wit_secrets::SecretFormat::Bytes => SecretFormat::Bytes,
+        wit_secrets::SecretFormat::Text => SecretFormat::Text,
+        wit_secrets::SecretFormat::Json => SecretFormat::Json,
+    }
 }

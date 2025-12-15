@@ -31,6 +31,7 @@ let resp = client.resolve_component(ResolveComponentRequest {
     extra: json!({}),
 }).await?;
 println!("artifact: {:?}", resp.artifact);
+println!("secret requirements: {:?}", resp.secret_requirements);
 ```
 
 `GeneratedDistributorApiBindings` calls the distributor imports on WASM targets. On non-WASM targets it returns an error; consumers can provide their own bindings implementation for testing.
@@ -71,6 +72,20 @@ let resp = client.resolve_component(ResolveComponentRequest {
     extra: json!({}),
 }).await?;
 println!("artifact: {:?}", resp.artifact);
+println!("secret requirements: {:?}", resp.secret_requirements);
+```
+
+Fetch typed pack status (includes secret requirements):
+
+```rust
+let status = client
+    .get_pack_status_v2(
+        &TenantCtx::new(EnvId::try_from("prod")?, TenantId::try_from("tenant-a")?),
+        &DistributorEnvironmentId::from("env-1"),
+        "pack-123",
+    )
+    .await?;
+println!("status: {}, secrets: {:?}", status.status, status.secret_requirements);
 ```
 
 ## Local dev distributor
@@ -86,3 +101,7 @@ let sources = ChainedDistributorSource::new(vec![Box::new(dev_source)]);
 let pack_bytes = sources.fetch_pack(&PackId::try_from("dev.local.hello-flow")?, &Version::parse("0.1.0")?);
 println!("Loaded {} bytes", pack_bytes.len());
 ```
+
+## Repo maintenance
+- Enable GitHub's "Allow auto-merge" setting for the repository.
+- Configure branch protection with the required checks you want enforced before merges.
