@@ -35,6 +35,7 @@ impl DistributorApiBindings for DummyBindings {
                 last_used_utc: "2024-01-01T00:00:00Z".into(),
                 last_refreshed_utc: "2024-01-01T00:00:00Z".into(),
             },
+            secret_requirements: vec![],
         };
         Ok(response)
     }
@@ -51,6 +52,31 @@ impl DistributorApiBindings for DummyBindings {
             "pack": pack_id
         })
         .to_string())
+    }
+
+    async fn get_pack_status_v2(
+        &self,
+        tenant_id: &str,
+        environment_id: &str,
+        pack_id: &str,
+    ) -> Result<wit::PackStatusResponse, anyhow::Error> {
+        Ok(wit::PackStatusResponse {
+            status: format!("status-{pack_id}"),
+            secret_requirements: vec![wit::SecretRequirement {
+                key: "api-key".into(),
+                required: true,
+                description: Some("key".into()),
+                scope: None,
+                format: None,
+                schema: None,
+                examples: vec![],
+            }],
+            extra: json!({
+                "tenant": tenant_id,
+                "env": environment_id
+            })
+            .to_string(),
+        })
     }
 
     async fn warm_pack(

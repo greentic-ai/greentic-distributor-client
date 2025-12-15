@@ -1,4 +1,5 @@
 use crate::{DistributorEnvironmentId, TenantCtx};
+use greentic_config_types::GreenticConfig;
 use std::{collections::HashMap, time::Duration};
 
 /// Configuration for distributor clients.
@@ -20,5 +21,53 @@ impl DistributorClientConfig {
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = Some(base_url.into());
         self
+    }
+
+    /// Builds a distributor client config from a resolved GreenticConfig and tenant context.
+    ///
+    /// This keeps greentic-config resolution in the host while allowing consumers to
+    /// map the shared schema into the distributor client.
+    pub fn from_greentic(cfg: &GreenticConfig, mut tenant: TenantCtx) -> Self {
+        // Ensure tenant context env matches the shared config.
+        tenant.env = cfg.environment.env_id.clone();
+        tenant.tenant_id = tenant.tenant.clone();
+
+        let environment_id = DistributorEnvironmentId::from(cfg.environment.env_id.as_str());
+        let request_timeout = cfg
+            .network
+            .request_timeout_ms
+            .or(cfg.runtime.request_timeout_ms)
+            .map(Duration::from_millis);
+
+        Self {
+            base_url: None,
+            environment_id,
+            tenant,
+            auth_token: None,
+            extra_headers: None,
+            request_timeout,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use greentic_types::{EnvId, TenantCtx, TenantId};
+
+    #[test]
+    fn maps_request_timeout_from_network_then_runtime() {
+        let mut cfg = GreenticConfig::default();
+        cfg.network.request_timeout_ms = Some(2500);
+        cfg.runtime.request_timeout_ms = Some(1000);
+
+        let tenant = TenantCtx::new(
+            EnvId::try_from("ignored").unwrap(),
+            TenantId::try_from("t1").unwrap(),
+        );
+        let mapped = DistributorClientConfig::from_greentic(&cfg, tenant);
+
+        assert_eq!(mapped.request_timeout, Some(Duration::from_millis(2500)));
+        assert_eq!(mapped.environment_id.as_str(), "dev");
     }
 }

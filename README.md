@@ -88,6 +88,20 @@ let status = client
 println!("status: {}, secrets: {:?}", status.status, status.secret_requirements);
 ```
 
+### Using greentic-config-types (host-resolved config)
+Resolve configuration in your host binary with `greentic-config` and map it into the distributor client with `DistributorClientConfig::from_greentic`:
+
+```rust
+use greentic_config_types::GreenticConfig;
+use greentic_distributor_client::{DistributorClientConfig, DistributorEnvironmentId, DistributorClient, TenantCtx, TenantId};
+
+let cfg: GreenticConfig = /* resolved in the host via greentic-config */;
+let tenant = TenantCtx::new(cfg.environment.env_id.clone(), TenantId::try_from("tenant-a")?);
+let mut client_cfg = DistributorClientConfig::from_greentic(&cfg, tenant)
+    .with_base_url("https://distributor.example.com"); // host still provides the endpoint/auth
+// pass client_cfg to your chosen DistributorClient implementation
+```
+
 ## Local dev distributor
 Use the companion `greentic-distributor-dev` crate to serve packs/components from a local directory, useful for greentic-dev and conformance tests:
 

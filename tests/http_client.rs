@@ -45,6 +45,7 @@ fn sample_response() -> ResolveComponentResponse {
             last_used_utc: "2024-01-01T00:00:00Z".into(),
             last_refreshed_utc: "2024-01-01T00:00:00Z".into(),
         },
+        secret_requirements: Vec::new(),
     }
 }
 
