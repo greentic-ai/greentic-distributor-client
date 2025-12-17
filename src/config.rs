@@ -33,11 +33,7 @@ impl DistributorClientConfig {
         tenant.tenant_id = tenant.tenant.clone();
 
         let environment_id = DistributorEnvironmentId::from(cfg.environment.env_id.as_str());
-        let request_timeout = cfg
-            .network
-            .request_timeout_ms
-            .or(cfg.runtime.request_timeout_ms)
-            .map(Duration::from_millis);
+        let request_timeout = cfg.network.read_timeout_ms.map(Duration::from_millis);
 
         Self {
             base_url: None,
@@ -53,13 +49,44 @@ impl DistributorClientConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use greentic_config_types::{
+        ConfigVersion, EnvironmentConfig, NetworkConfig, PathsConfig, RuntimeConfig,
+        SecretsBackendRefConfig, TelemetryConfig,
+    };
     use greentic_types::{EnvId, TenantCtx, TenantId};
+    use std::path::PathBuf;
+
+    fn greentic_config() -> GreenticConfig {
+        GreenticConfig {
+            schema_version: ConfigVersion::default(),
+            environment: EnvironmentConfig {
+                env_id: EnvId::try_from("dev").unwrap(),
+                deployment: None,
+                connection: None,
+                region: None,
+            },
+            paths: PathsConfig {
+                greentic_root: PathBuf::from("/workspace"),
+                state_dir: PathBuf::from("/workspace/state"),
+                cache_dir: PathBuf::from("/workspace/cache"),
+                logs_dir: PathBuf::from("/workspace/logs"),
+            },
+            packs: None,
+            services: None,
+            events: None,
+            runtime: RuntimeConfig::default(),
+            telemetry: TelemetryConfig::default(),
+            network: NetworkConfig::default(),
+            deployer: None,
+            secrets: SecretsBackendRefConfig::default(),
+            dev: None,
+        }
+    }
 
     #[test]
-    fn maps_request_timeout_from_network_then_runtime() {
-        let mut cfg = GreenticConfig::default();
-        cfg.network.request_timeout_ms = Some(2500);
-        cfg.runtime.request_timeout_ms = Some(1000);
+    fn maps_request_timeout_from_network_read_timeout() {
+        let mut cfg = greentic_config();
+        cfg.network.read_timeout_ms = Some(2500);
 
         let tenant = TenantCtx::new(
             EnvId::try_from("ignored").unwrap(),
