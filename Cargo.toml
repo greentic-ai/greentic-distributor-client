@@ -24,7 +24,7 @@ resolver = "2"
 
 [workspace.dependencies]
 tempfile = "3"
-greentic-distributor-client = { path = ".", version = "0.4.1" }
+greentic-distributor-client = { path = ".", version = "0.4" }
 
 [dependencies]
 async-trait = "0.1"

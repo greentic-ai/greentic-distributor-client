@@ -29,28 +29,39 @@ jobs:
         run: cargo test --workspace --locked
       - name: Package check (client)
         run: cargo package --locked -p greentic-distributor-client
-      - name: Package check (dev)
-        run: cargo package --locked -p greentic-distributor-dev
-      - name: Publish crates (skip if already uploaded)
+      - name: Publish client (skip if already uploaded)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -eo pipefail
-          publish() {
-            local pkg=$1
-            echo "Publishing ${pkg}..."
-            set +e
-            output=$(cargo publish --locked -p "${pkg}" 2>&1)
-            status=$?
-            set -e
-            printf '%s\n' "$output"
-            if [ $status -ne 0 ]; then
-              if echo "$output" | grep -Eqi "already uploaded|already exists"; then
-                echo "${pkg} already published; skipping."
-              else
-                exit $status
-              fi
+          set +e
+          output=$(cargo publish --locked -p greentic-distributor-client 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ $status -ne 0 ]; then
+            if echo "$output" | grep -Eqi "already uploaded|already exists"; then
+              echo "greentic-distributor-client already published; continuing."
+            else
+              exit $status
             fi
-          }
-          publish greentic-distributor-client
-          publish greentic-distributor-dev
+          fi
+      - name: Package check (dev)
+        run: cargo package --locked -p greentic-distributor-dev
+      - name: Publish dev (skip if already uploaded)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -eo pipefail
+          set +e
+          output=$(cargo publish --locked -p greentic-distributor-dev 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ $status -ne 0 ]; then
+            if echo "$output" | grep -Eqi "already uploaded|already exists"; then
+              echo "greentic-distributor-dev already published; skipping."
+            else
+              exit $status
+            fi
+          fi
