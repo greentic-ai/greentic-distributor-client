@@ -5,12 +5,16 @@ pub mod types;
 
 #[cfg(feature = "http-runtime")]
 mod http;
+#[cfg(feature = "oci-components")]
+pub mod oci_components;
 mod wit_client;
 
 pub use config::DistributorClientConfig;
 pub use error::DistributorError;
 #[cfg(feature = "http-runtime")]
 pub use http::HttpDistributorClient;
+#[cfg(feature = "oci-components")]
+pub use oci_components::*;
 pub use source::{ChainedDistributorSource, DistributorSource};
 pub use types::*;
 pub use wit_client::{

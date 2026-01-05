@@ -18,6 +18,8 @@
   - **Role:** `DistributorError` enum covering WIT/serde/invalid-response errors plus not-found/permission/other variants; HTTP-specific variants are gated behind the `http-runtime` feature.
 - **Path:** `src/source.rs`
   - **Role:** `DistributorSource` trait for pack/component fetching plus `ChainedDistributorSource` for priority lookup; includes in-memory tests.
+- **Path:** `src/oci_components.rs` (feature `oci-components`)
+  - **Role:** Minimal OCI/GHCR component resolver with digest enforcement, HTTPS pulls (anon), caching under `${GREENTIC_HOME:-$HOME/.greentic}/cache/oci/<sha256>`, offline mode, and tag opt-in; exposes `ComponentsExtension` for `greentic.components` refs. Tested via `tests/oci_components.rs`.
 - **Path:** `src/wit_client.rs`
   - **Role:** `WitDistributorClient` plus `DistributorApiBindings` trait to wrap actual WIT guest bindings; provides `GeneratedDistributorApiBindings` that calls distributor-api imports on WASM targets (errors on non-WASM) and handles DTO↔WIT conversions using `greentic-interfaces-guest::distributor_api` types and JSON parsing.
 - **Path:** `src/http.rs` (feature `http-runtime`)
@@ -45,7 +47,7 @@
 - WIT integration uses a pluggable `DistributorApiBindings` trait; `GeneratedDistributorApiBindings` works on WASM targets and errors on non-WASM. HTTP runtime client is feature-gated (`http-runtime`) for environments where the runtime JSON surface is available. Dev distributor is ready for greentic-dev wiring.
 
 ## 4. Broken, Failing, or Conflicting Areas
-- None observed. `cargo test` now passes (HTTP client + WIT translation tests).
+- None currently known. `ci/local_check.sh` (fmt + clippy + tests) passes with all features enabled, including the new `oci-components` path.
 
 ## 5. Notes for Future Work
 - Confirm HTTP JSON field naming against the canonical distributor API and adjust serializers as needed.

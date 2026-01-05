@@ -8,4 +8,6 @@ echo ">> clippy"
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 echo ">> tests"
+export OCI_E2E=${OCI_E2E:-1}
+export OCI_E2E_REF=${OCI_E2E_REF:-ghcr.io/greentic-ai/components/templates:latest}
 cargo test --workspace --all-features
