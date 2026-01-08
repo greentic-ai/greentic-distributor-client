@@ -17,7 +17,7 @@ pub struct DistOptions {
 
 impl Default for DistOptions {
     fn default() -> Self {
-        let offline = std::env::var("GREENTIC_DIST_OFFLINE").map_or(false, |v| v == "1");
+        let offline = std::env::var("GREENTIC_DIST_OFFLINE").is_ok_and(|v| v == "1");
         Self {
             cache_dir: default_cache_root(),
             allow_tags: true,
@@ -53,10 +53,12 @@ pub struct DistClient {
 
 impl DistClient {
     pub fn new(opts: DistOptions) -> Self {
-        let mut oci_opts = ComponentResolveOptions::default();
-        oci_opts.allow_tags = opts.allow_tags;
-        oci_opts.offline = opts.offline;
-        oci_opts.cache_dir = opts.cache_dir.clone();
+        let oci_opts = ComponentResolveOptions {
+            allow_tags: opts.allow_tags,
+            offline: opts.offline,
+            cache_dir: opts.cache_dir.clone(),
+            ..Default::default()
+        };
         let http = reqwest::Client::builder()
             .no_proxy()
             .build()
