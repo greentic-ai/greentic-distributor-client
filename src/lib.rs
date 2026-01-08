@@ -3,6 +3,10 @@ pub mod error;
 pub mod source;
 pub mod types;
 
+#[cfg(feature = "dist-client")]
+pub mod dist;
+#[cfg(feature = "dist-cli")]
+pub mod dist_cli;
 #[cfg(feature = "http-runtime")]
 mod http;
 #[cfg(feature = "oci-components")]
@@ -10,6 +14,8 @@ pub mod oci_components;
 mod wit_client;
 
 pub use config::DistributorClientConfig;
+#[cfg(feature = "dist-client")]
+pub use dist::{DistClient, DistOptions, ResolvedArtifact};
 pub use error::DistributorError;
 #[cfg(feature = "http-runtime")]
 pub use http::HttpDistributorClient;

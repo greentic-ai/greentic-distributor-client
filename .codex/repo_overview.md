@@ -22,6 +22,10 @@
   - **Role:** Minimal OCI/GHCR component resolver with digest enforcement, HTTPS pulls (anon), caching under `${GREENTIC_HOME:-$HOME/.greentic}/cache/oci/<sha256>`, offline mode, and tag opt-in; exposes `ComponentsExtension` for `greentic.components` refs. Tested via `tests/oci_components.rs`.
 - **Path:** `src/wit_client.rs`
   - **Role:** `WitDistributorClient` plus `DistributorApiBindings` trait to wrap actual WIT guest bindings; provides `GeneratedDistributorApiBindings` that calls distributor-api imports on WASM targets (errors on non-WASM) and handles DTO↔WIT conversions using `greentic-interfaces-guest::distributor_api` types and JSON parsing.
+- **Path:** `src/dist.rs` (feature `dist-client`)
+  - **Role:** `DistClient`/`DistOptions` reusable resolver/cache API for components (file/http/OCI), standardized cache layout, lockfile pulling, and digest computation.
+- **Path:** `src/dist_cli.rs` + `src/bin/greentic-dist.rs` (feature `dist-cli`)
+  - **Role:** `greentic-dist` CLI (with shim `greentic-distributor-client`) for resolve/pull/cache/auth (stub) commands; defaults to `${XDG_CACHE_HOME:-~/.cache}/greentic/components/<sha256>/component.wasm`, supports `GREENTIC_DIST_CACHE_DIR`.
 - **Path:** `src/http.rs` (feature `http-runtime`)
   - **Role:** `HttpDistributorClient` implementing the trait over JSON runtime endpoints (`/distributor-api/resolve-component`, `/pack-status`, `/warm-pack`); handles auth headers and status mapping.
 - **Path:** `tests/wit_client.rs`

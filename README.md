@@ -4,6 +4,7 @@ WIT-based client for the `greentic:distributor-api@1.0.0` world. Provides:
 - `DistributorClient` async trait for resolving components, querying pack status, and warming packs.
 - `WitDistributorClient` adapter that translates DTOs to `greentic-interfaces-guest` distributor-api bindings; use `GeneratedDistributorApiBindings` on WASM targets to call the distributor imports.
 - Optional HTTP runtime client behind the `http-runtime` feature for JSON endpoints that mirror the runtime API.
+- `greentic-dist` CLI (feature `dist-cli`) for resolving/pulling components into a shared cache, plus a library `DistClient` API for pack/runner integration.
 
 Uses DTOs from `greentic-types`.
 
@@ -96,6 +97,45 @@ println!(
     status.status, status.secret_requirements
 );
 ```
+
+## greentic-dist CLI (feature `dist-cli`)
+Build with the CLI feature to get the `greentic-dist` binary:
+
+```bash
+cargo run --features dist-cli --bin greentic-dist -- resolve ghcr.io/greentic-ai/components/templates:latest
+```
+
+Commands:
+- `resolve <REF>`: print digest (use `--json` for structured output).
+- `pull <REF>`: ensure cached; prints path. Use `--lock <pack.lock>` to pull all components from a lockfile.
+- `cache ls|rm|gc`: list/remove/gc cache entries.
+- `auth login <target>`: stub for future store/repo auth.
+
+Control cache location with `--cache-dir` or `GREENTIC_DIST_CACHE_DIR`; defaults to `${XDG_CACHE_HOME:-~/.cache}/greentic/components/<sha256>/component.wasm`. Set `GREENTIC_SILENCE_DEPRECATION_WARNINGS=1` to silence the temporary `greentic-distributor-client` shim binary warning.
+
+Exit codes:
+- `0` success
+- `2` invalid input (bad ref/lockfile/missing args)
+- `3` not found (cache miss)
+- `4` offline blocked (network needed)
+- `5` auth required/not implemented (repo://, store://)
+- `10` internal error
+
+## Library API (feature `dist-client`)
+Use `DistClient` to reuse the same resolution and cache logic programmatically:
+
+```rust
+use greentic_distributor_client::dist::{DistClient, DistOptions};
+
+let client = DistClient::new(DistOptions::default());
+let resolved = client.ensure_cached("file:///tmp/my-component.wasm").await?;
+println!("digest: {}, path: {}", resolved.digest, resolved.cache_path.unwrap().display());
+```
+
+### Integration examples
+- Resolve a ref: `greentic-dist resolve oci://ghcr.io/greentic-ai/components/hello-world:1`
+- Pull everything from a lockfile: `greentic-dist pull --lock pack.lock.json`
+- Offline workflow: `greentic-dist pull --lock pack.lock.json` then `greentic-runner run mypack.gtpack --offline`
 
 ### Using greentic-config-types (host-resolved config)
 Resolve configuration in your host binary with `greentic-config` and map it into the distributor client with `DistributorClientConfig::from_greentic`:

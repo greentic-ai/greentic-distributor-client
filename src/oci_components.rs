@@ -271,14 +271,17 @@ fn normalize_digest(digest: &str) -> String {
     }
 }
 
-fn default_cache_root() -> PathBuf {
-    if let Ok(root) = std::env::var("GREENTIC_HOME") {
-        PathBuf::from(root).join("cache")
-    } else if let Some(home) = dirs_next::home_dir() {
-        home.join(".greentic").join("cache")
-    } else {
-        PathBuf::from(".greentic").join("cache")
+pub(crate) fn default_cache_root() -> PathBuf {
+    if let Ok(root) = std::env::var("GREENTIC_DIST_CACHE_DIR") {
+        return PathBuf::from(root);
     }
+    if let Some(cache) = dirs_next::cache_dir() {
+        return cache.join("greentic").join("components");
+    }
+    if let Ok(root) = std::env::var("GREENTIC_HOME") {
+        return PathBuf::from(root).join("cache").join("components");
+    }
+    PathBuf::from(".greentic").join("cache").join("components")
 }
 
 #[derive(Clone, Debug)]
@@ -363,7 +366,7 @@ impl OciCache {
     }
 
     fn artifact_dir(&self, digest: &str) -> PathBuf {
-        self.root.join("oci").join(trim_digest_prefix(digest))
+        self.root.join(trim_digest_prefix(digest))
     }
 
     fn artifact_path(&self, digest: &str) -> PathBuf {
