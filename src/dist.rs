@@ -13,15 +13,19 @@ pub struct DistOptions {
     pub cache_dir: PathBuf,
     pub allow_tags: bool,
     pub offline: bool,
+    pub allow_insecure_local_http: bool,
 }
 
 impl Default for DistOptions {
     fn default() -> Self {
         let offline = std::env::var("GREENTIC_DIST_OFFLINE").is_ok_and(|v| v == "1");
+        let allow_insecure_local_http =
+            std::env::var("GREENTIC_DIST_ALLOW_INSECURE_LOCAL_HTTP").is_ok_and(|v| v == "1");
         Self {
             cache_dir: default_cache_root(),
             allow_tags: true,
             offline,
+            allow_insecure_local_http,
         }
     }
 }
@@ -175,6 +179,13 @@ impl DistClient {
                 reference: url.to_string(),
             });
         }
+        if !(url.starts_with("https://")
+            || (self.opts.allow_insecure_local_http && is_loopback_http(url)))
+        {
+            return Err(DistError::InsecureUrl {
+                url: url.to_string(),
+            });
+        }
         let bytes = self
             .http
             .get(url)
@@ -240,6 +251,8 @@ pub enum DistError {
     InvalidReference { reference: String },
     #[error("invalid input: {0}")]
     InvalidInput(String),
+    #[error("insecure url `{url}`: only https is allowed")]
+    InsecureUrl { url: String },
     #[error("offline mode forbids fetching `{reference}`")]
     Offline { reference: String },
     #[error("reference `{reference}` is not cached")]
@@ -261,6 +274,7 @@ impl DistError {
         match self {
             DistError::InvalidReference { .. }
             | DistError::InvalidInput(_)
+            | DistError::InsecureUrl { .. }
             | DistError::Serde(_) => 2,
             DistError::CacheMiss { .. } => 3,
             DistError::Offline { .. } => 4,
@@ -383,6 +397,18 @@ fn classify_reference(input: &str) -> Result<RefKind, DistError> {
 
 fn is_digest(s: &str) -> bool {
     s.starts_with("sha256:") && s.len() == "sha256:".len() + 64
+}
+
+fn is_loopback_http(url: &str) -> bool {
+    if let Ok(parsed) = Url::parse(url) {
+        if parsed.scheme() != "http" {
+            return false;
+        }
+        if let Some(host) = parsed.host_str() {
+            return host == "localhost" || host == "127.0.0.1";
+        }
+    }
+    false
 }
 
 #[derive(Debug, serde::Deserialize)]

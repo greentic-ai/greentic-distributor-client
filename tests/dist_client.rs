@@ -16,6 +16,7 @@ fn options(dir: &TempDir) -> DistOptions {
         cache_dir: dir.path().to_path_buf(),
         allow_tags: true,
         offline: false,
+        allow_insecure_local_http: true,
     }
 }
 
@@ -130,4 +131,16 @@ async fn offline_mode_blocks_http_fetch() {
         .unwrap_err();
     let msg = format!("{err}");
     assert!(msg.contains("offline"), "unexpected error: {msg}");
+}
+
+#[tokio::test]
+async fn rejects_insecure_http_fetch() {
+    let temp = tempfile::tempdir().unwrap();
+    let client = DistClient::new(options(&temp));
+    let err = client
+        .resolve_ref("http://example.com/component.wasm")
+        .await
+        .unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("insecure url"), "unexpected error: {msg}");
 }
