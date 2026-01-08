@@ -1,6 +1,6 @@
 #![cfg(feature = "dist-cli")]
 
-use assert_cmd::{assert::OutputAssertExt, cargo::cargo_bin, prelude::*};
+use assert_cmd::assert::OutputAssertExt;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -26,7 +26,7 @@ fn cache_ls_rm_gc_json() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("component.wasm"), b"cached").unwrap();
 
-    let mut cmd = Command::new(cargo_bin!("greentic-dist"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("greentic-dist"));
     cmd.args(["--cache-dir", temp.path().to_str().unwrap()]);
     cmd.arg("cache").arg("ls").arg("--json");
     for (k, v) in cache_env(&temp) {
@@ -36,7 +36,7 @@ fn cache_ls_rm_gc_json() {
     let listed: Vec<String> = serde_json::from_slice(&output).unwrap();
     assert_eq!(listed, vec![digest.to_string()]);
 
-    let mut rm = Command::new(cargo_bin!("greentic-dist"));
+    let mut rm = Command::new(assert_cmd::cargo::cargo_bin!("greentic-dist"));
     rm.args(["--cache-dir", temp.path().to_str().unwrap()]);
     rm.args(["cache", "rm", "--json", digest]);
     for (k, v) in cache_env(&temp) {
@@ -44,7 +44,7 @@ fn cache_ls_rm_gc_json() {
     }
     rm.assert().success();
 
-    let mut gc = Command::new(cargo_bin!("greentic-dist"));
+    let mut gc = Command::new(assert_cmd::cargo::cargo_bin!("greentic-dist"));
     gc.args(["--cache-dir", temp.path().to_str().unwrap()]);
     gc.args(["cache", "gc", "--json"]);
     for (k, v) in cache_env(&temp) {

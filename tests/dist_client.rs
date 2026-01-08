@@ -40,7 +40,7 @@ async fn caches_file_path_and_computes_digest() {
 
 #[tokio::test]
 async fn caches_http_download() {
-    let server = match std::panic::catch_unwind(|| httpmock::MockServer::start()) {
+    let server = match std::panic::catch_unwind(httpmock::MockServer::start) {
         Ok(s) => s,
         Err(_) => {
             eprintln!(

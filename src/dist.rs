@@ -89,10 +89,10 @@ impl DistClient {
 
     pub async fn ensure_cached(&self, reference: &str) -> Result<ResolvedArtifact, DistError> {
         let resolved = self.resolve_ref(reference).await?;
-        if let Some(path) = &resolved.cache_path {
-            if path.exists() {
-                return Ok(resolved);
-            }
+        if let Some(path) = &resolved.cache_path
+            && path.exists()
+        {
+            return Ok(resolved);
         }
         Err(DistError::CacheMiss {
             reference: reference.to_string(),
@@ -306,12 +306,11 @@ impl ComponentCache {
         let mut digests = Vec::new();
         if let Ok(entries) = fs::read_dir(&self.base) {
             for entry in entries.flatten() {
-                if let Ok(meta) = entry.metadata() {
-                    if meta.is_dir() {
-                        if let Some(name) = entry.file_name().to_str() {
-                            digests.push(format!("sha256:{name}"));
-                        }
-                    }
+                if let Ok(meta) = entry.metadata()
+                    && meta.is_dir()
+                    && let Some(name) = entry.file_name().to_str()
+                {
+                    digests.push(format!("sha256:{name}"));
                 }
             }
         }
