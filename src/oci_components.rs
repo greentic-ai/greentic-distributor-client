@@ -205,6 +205,10 @@ impl<C: RegistryClient> OciComponentResolver<C> {
             &self.opts.preferred_layer_media_types,
             reference,
         )?;
+        let manifest_layer = image
+            .layers
+            .iter()
+            .find(|layer| layer.media_type == COMPONENT_MANIFEST_MEDIA_TYPE);
         let resolved_digest = image
             .digest
             .clone()
@@ -229,6 +233,12 @@ impl<C: RegistryClient> OciComponentResolver<C> {
             reference,
             manifest_digest.clone(),
         )?;
+        if let Some(layer) = manifest_layer
+            && layer.media_type != chosen_layer.media_type
+        {
+            self.cache
+                .write_manifest_layer(&resolved_digest, &layer.data, reference)?;
+        }
 
         Ok(ResolvedComponent {
             original_reference: reference.to_string(),
@@ -296,13 +306,12 @@ impl OciCache {
         Self { root }
     }
 
-    fn write(
+    fn write_layer_data(
         &self,
         digest: &str,
         media_type: &str,
         data: &[u8],
         reference: &str,
-        manifest_digest: Option<String>,
     ) -> Result<PathBuf, OciComponentError> {
         let dir = self.artifact_dir(digest);
         fs::create_dir_all(&dir).map_err(|source| OciComponentError::Io {
@@ -315,6 +324,19 @@ impl OciCache {
             reference: reference.to_string(),
             source,
         })?;
+        Ok(artifact_path)
+    }
+
+    fn write(
+        &self,
+        digest: &str,
+        media_type: &str,
+        data: &[u8],
+        reference: &str,
+        manifest_digest: Option<String>,
+    ) -> Result<PathBuf, OciComponentError> {
+        let artifact_path = self.write_layer_data(digest, media_type, data, reference)?;
+        let dir = self.artifact_dir(digest);
 
         let metadata = CacheMetadata {
             original_reference: reference.to_string(),
@@ -339,6 +361,15 @@ impl OciCache {
         })?;
 
         Ok(artifact_path)
+    }
+
+    fn write_manifest_layer(
+        &self,
+        digest: &str,
+        data: &[u8],
+        reference: &str,
+    ) -> Result<PathBuf, OciComponentError> {
+        self.write_layer_data(digest, COMPONENT_MANIFEST_MEDIA_TYPE, data, reference)
     }
 
     fn try_hit(&self, digest: &str, reference: &str) -> Option<ResolvedComponent> {

@@ -44,6 +44,13 @@ pub enum Commands {
         #[command(subcommand)]
         command: AuthCommand,
     },
+    /// Pull an OCI reference and report cached files
+    Inspect {
+        reference: String,
+        /// Print the selected layer media type
+        #[arg(long)]
+        show_media_type: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -217,6 +224,23 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
                 });
             }
         },
+        Commands::Inspect {
+            reference,
+            show_media_type,
+        } => {
+            let inspection = client
+                .pull_oci_with_details(&reference)
+                .await
+                .map_err(CliError::from_dist)?;
+            let wasm_path = inspection.cache_dir.join("component.wasm");
+            let manifest_path = inspection.cache_dir.join("component.manifest.json");
+            println!("cache dir: {}", inspection.cache_dir.display());
+            println!("component.wasm: {}", wasm_path.exists());
+            println!("component.manifest.json: {}", manifest_path.exists());
+            if show_media_type {
+                println!("selected media type: {}", inspection.selected_media_type);
+            }
+        }
     }
 
     Ok(())

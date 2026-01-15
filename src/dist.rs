@@ -55,6 +55,14 @@ pub struct DistClient {
     opts: DistOptions,
 }
 
+#[derive(Clone, Debug)]
+pub struct OciCacheInspection {
+    pub digest: String,
+    pub cache_dir: PathBuf,
+    pub selected_media_type: String,
+    pub fetched: bool,
+}
+
 impl DistClient {
     pub fn new(opts: DistOptions) -> Self {
         let oci_opts = ComponentResolveOptions {
@@ -241,6 +249,42 @@ impl DistClient {
             digest: resolved.resolved_digest,
             fetched: resolved.fetched_from_network,
             source: ArtifactSource::Oci(reference.to_string()),
+        })
+    }
+
+    pub async fn pull_oci_with_details(
+        &self,
+        reference: &str,
+    ) -> Result<OciCacheInspection, DistError> {
+        if self.opts.offline {
+            return Err(DistError::Offline {
+                reference: reference.to_string(),
+            });
+        }
+        let result = self
+            .oci
+            .resolve_refs(&crate::oci_components::ComponentsExtension {
+                refs: vec![reference.to_string()],
+                mode: crate::oci_components::ComponentsMode::Eager,
+            })
+            .await
+            .map_err(DistError::Oci)?;
+        let resolved = result
+            .into_iter()
+            .next()
+            .ok_or_else(|| DistError::InvalidReference {
+                reference: reference.to_string(),
+            })?;
+        let cache_dir = resolved
+            .path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| DistError::InvalidInput("cache path missing parent".into()))?;
+        Ok(OciCacheInspection {
+            digest: resolved.resolved_digest,
+            cache_dir,
+            selected_media_type: resolved.media_type,
+            fetched: resolved.fetched_from_network,
         })
     }
 }
