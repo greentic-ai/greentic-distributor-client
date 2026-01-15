@@ -37,8 +37,8 @@ const COMPONENT_MANIFEST_MEDIA_TYPE: &str = "application/vnd.greentic.component.
 static DEFAULT_LAYER_MEDIA_TYPES: &[&str] = &[
     "application/vnd.wasm.component.v1+wasm",
     "application/vnd.module.wasm.content.layer.v1+wasm",
-    COMPONENT_MANIFEST_MEDIA_TYPE,
     "application/wasm",
+    COMPONENT_MANIFEST_MEDIA_TYPE,
     "application/octet-stream",
 ];
 
@@ -465,6 +465,27 @@ impl RegistryClient for DefaultRegistryClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn select_layer_prefers_wasm_over_manifest() {
+        let layers = vec![
+            PulledLayer {
+                media_type: COMPONENT_MANIFEST_MEDIA_TYPE.to_string(),
+                data: br#"{"name":"demo"}"#.to_vec(),
+                digest: None,
+            },
+            PulledLayer {
+                media_type: "application/wasm".to_string(),
+                data: b"wasm-bytes".to_vec(),
+                digest: None,
+            },
+        ];
+        let opts = ComponentResolveOptions::default();
+
+        let chosen = select_layer(&layers, &opts.preferred_layer_media_types, "ref").unwrap();
+
+        assert_eq!(chosen.media_type, "application/wasm");
+    }
 
     #[test]
     fn cache_writes_manifest_and_wasm_paths() {

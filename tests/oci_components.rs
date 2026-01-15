@@ -90,6 +90,13 @@ fn pulled_image(data: &[u8], media_type: &str, digest: &str) -> PulledImage {
     }
 }
 
+fn pulled_image_with_layers(layers: Vec<PulledLayer>) -> PulledImage {
+    PulledImage {
+        digest: None,
+        layers,
+    }
+}
+
 #[tokio::test]
 async fn resolves_digest_pinned_and_caches() {
     let temp = tempfile::tempdir().unwrap();
@@ -214,6 +221,70 @@ async fn caches_manifest_and_wasm_with_expected_filenames() {
     assert_eq!(
         results[1].path.file_name().and_then(|s| s.to_str()),
         Some("component.wasm")
+    );
+}
+
+#[tokio::test]
+async fn prefers_wasm_layer_and_writes_wasm_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest_bytes = br#"{"name":"demo"}"#;
+    let manifest_digest = digest_for(manifest_bytes);
+    let wasm_bytes = b"wasm-bytes";
+    let wasm_digest = digest_for(wasm_bytes);
+    let reference = format!("ghcr.io/greentic/components@{wasm_digest}");
+
+    let image = pulled_image_with_layers(vec![
+        PulledLayer {
+            media_type: "application/vnd.greentic.component.manifest+json".to_string(),
+            data: manifest_bytes.to_vec(),
+            digest: Some(manifest_digest),
+        },
+        PulledLayer {
+            media_type: "application/wasm".to_string(),
+            data: wasm_bytes.to_vec(),
+            digest: Some(wasm_digest.clone()),
+        },
+    ]);
+
+    let mock = MockRegistryClient::with_image(&reference, image);
+    let resolver = OciComponentResolver::with_client(mock, options(&temp));
+
+    let results = resolver
+        .resolve_refs(&extension(vec![&reference]))
+        .await
+        .unwrap();
+
+    assert_eq!(results[0].media_type, "application/wasm");
+    assert_eq!(
+        results[0].path.file_name().and_then(|s| s.to_str()),
+        Some("component.wasm")
+    );
+}
+
+#[tokio::test]
+async fn writes_manifest_path_when_only_manifest_layer_present() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest_bytes = br#"{"name":"demo"}"#;
+    let manifest_digest = digest_for(manifest_bytes);
+    let reference = format!("ghcr.io/greentic/components@{manifest_digest}");
+
+    let image = pulled_image_with_layers(vec![PulledLayer {
+        media_type: "application/vnd.greentic.component.manifest+json".to_string(),
+        data: manifest_bytes.to_vec(),
+        digest: Some(manifest_digest.clone()),
+    }]);
+
+    let mock = MockRegistryClient::with_image(&reference, image);
+    let resolver = OciComponentResolver::with_client(mock, options(&temp));
+
+    let results = resolver
+        .resolve_refs(&extension(vec![&reference]))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        results[0].path.file_name().and_then(|s| s.to_str()),
+        Some("component.manifest.json")
     );
 }
 
