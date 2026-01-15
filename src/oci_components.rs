@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -120,6 +120,8 @@ struct CacheMetadata {
     size_bytes: u64,
     #[serde(default)]
     manifest_digest: Option<String>,
+    #[serde(default)]
+    manifest_wasm_name: Option<String>,
 }
 
 /// Resolve OCI component references with caching and offline support.
@@ -364,7 +366,7 @@ impl OciCache {
             source,
         })?;
 
-        let artifact_path = self.artifact_path_for_media_type(digest, media_type);
+        let artifact_path = self.artifact_path_for_media_type(digest, media_type, None);
         fs::write(&artifact_path, data).map_err(|source| OciComponentError::Io {
             reference: reference.to_string(),
             source,
@@ -386,11 +388,7 @@ impl OciCache {
         } else if let Some(name) = manifest_wasm_name {
             let path = self.write_named_file(digest, name, data, reference)?;
             if name != DEFAULT_WASM_FILENAME {
-                let legacy_path = self.artifact_dir(digest).join(DEFAULT_WASM_FILENAME);
-                fs::write(&legacy_path, data).map_err(|source| OciComponentError::Io {
-                    reference: reference.to_string(),
-                    source,
-                })?;
+                self.write_legacy_symlink(self.artifact_dir(digest).as_path(), name);
             }
             path
         } else {
@@ -408,6 +406,7 @@ impl OciCache {
                 .as_secs(),
             size_bytes: data.len() as u64,
             manifest_digest,
+            manifest_wasm_name: manifest_wasm_name.map(|name| name.to_string()),
         };
         let metadata_path = dir.join("metadata.json");
         let buf =
@@ -458,7 +457,12 @@ impl OciCache {
             .as_ref()
             .map(|m| m.media_type.clone())
             .unwrap_or_else(|| "application/octet-stream".to_string());
-        let path = self.artifact_path_for_media_type(digest, &media_type);
+        let manifest_wasm_name = metadata
+            .as_ref()
+            .and_then(|m| m.manifest_wasm_name.clone())
+            .or_else(|| self.manifest_wasm_name_from_cache(digest, reference));
+        let path =
+            self.artifact_path_for_media_type(digest, &media_type, manifest_wasm_name.as_deref());
         if !path.exists() {
             return None;
         }
@@ -482,16 +486,47 @@ impl OciCache {
         self.root.join(trim_digest_prefix(digest))
     }
 
-    fn artifact_path_for_media_type(&self, digest: &str, media_type: &str) -> PathBuf {
-        self.artifact_dir(digest)
-            .join(Self::artifact_filename(media_type))
-    }
-
-    fn artifact_filename(media_type: &str) -> &'static str {
-        if media_type == COMPONENT_MANIFEST_MEDIA_TYPE {
+    fn artifact_path_for_media_type(
+        &self,
+        digest: &str,
+        media_type: &str,
+        manifest_wasm_name: Option<&str>,
+    ) -> PathBuf {
+        let dir = self.artifact_dir(digest);
+        let filename = if media_type == COMPONENT_MANIFEST_MEDIA_TYPE {
             "component.manifest.json"
+        } else if let Some(name) = manifest_wasm_name {
+            name
         } else {
             DEFAULT_WASM_FILENAME
+        };
+        dir.join(filename)
+    }
+
+    fn manifest_wasm_name_from_cache(&self, digest: &str, reference: &str) -> Option<String> {
+        let path = self.artifact_dir(digest).join("component.manifest.json");
+        if !path.exists() {
+            return None;
+        }
+        let data = fs::read(path).ok()?;
+        manifest_component_wasm_name(&data, reference)
+            .ok()
+            .flatten()
+    }
+
+    fn write_legacy_symlink(&self, dir: &Path, target: &str) {
+        let legacy_path = dir.join(DEFAULT_WASM_FILENAME);
+        if legacy_path.exists() {
+            return;
+        }
+        let target_path = dir.join(target);
+        #[cfg(unix)]
+        {
+            let _ = std::os::unix::fs::symlink(&target_path, &legacy_path);
+        }
+        #[cfg(windows)]
+        {
+            let _ = std::os::windows::fs::symlink_file(&target_path, &legacy_path);
         }
     }
 
@@ -577,6 +612,9 @@ impl RegistryClient for DefaultRegistryClient {
 mod tests {
     use super::*;
 
+    const TEST_DIGEST: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
     #[test]
     fn select_layer_prefers_wasm_over_manifest() {
         let layers = vec![
@@ -602,8 +640,8 @@ mod tests {
     fn cache_writes_manifest_and_wasm_paths() {
         let temp = tempfile::tempdir().unwrap();
         let cache = OciCache::new(temp.path().to_path_buf());
-        let digest = "sha256:deadbeef";
-        let reference = "ghcr.io/greentic/components@sha256:deadbeef";
+        let digest = TEST_DIGEST;
+        let reference = "ghcr.io/greentic/components@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
         let manifest_path = cache
             .write(
@@ -642,8 +680,8 @@ mod tests {
     fn cache_writes_manifest_named_wasm_file() {
         let temp = tempfile::tempdir().unwrap();
         let cache = OciCache::new(temp.path().to_path_buf());
-        let digest = "sha256:deadbeef";
-        let reference = "ghcr.io/greentic/components@sha256:deadbeef";
+        let digest = TEST_DIGEST;
+        let reference = "ghcr.io/greentic/components@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let manifest_bytes = br#"{"artifacts":{"component_wasm":"component_templates.wasm"}}"#;
 
         let manifest_path = cache
@@ -673,11 +711,112 @@ mod tests {
             .unwrap();
         assert!(wasm_path.exists());
         assert!(cache.artifact_dir(digest).join(&manifest_name).exists());
-        assert!(
-            cache
-                .artifact_dir(digest)
-                .join(DEFAULT_WASM_FILENAME)
-                .exists()
+        let legacy_path = cache.artifact_dir(digest).join(DEFAULT_WASM_FILENAME);
+        if legacy_path.exists() {
+            let metadata = fs::symlink_metadata(&legacy_path).unwrap();
+            assert!(metadata.file_type().is_symlink());
+        }
+    }
+
+    #[derive(Clone)]
+    struct FakeClient {
+        image: PulledImage,
+    }
+
+    #[async_trait]
+    impl RegistryClient for FakeClient {
+        fn default_client() -> Self {
+            Self {
+                image: PulledImage {
+                    digest: None,
+                    layers: Vec::new(),
+                },
+            }
+        }
+
+        async fn pull(
+            &self,
+            _reference: &Reference,
+            _accepted_manifest_types: &[&str],
+        ) -> Result<PulledImage, OciDistributionError> {
+            Ok(self.image.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_returns_manifest_named_wasm_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let manifest_bytes =
+            br#"{"artifacts":{"component_wasm":"component_templates.wasm"}}"#.to_vec();
+        let image = PulledImage {
+            digest: Some(TEST_DIGEST.to_string()),
+            layers: vec![
+                PulledLayer {
+                    media_type: COMPONENT_MANIFEST_MEDIA_TYPE.to_string(),
+                    data: manifest_bytes.clone(),
+                    digest: None,
+                },
+                PulledLayer {
+                    media_type: "application/wasm".to_string(),
+                    data: b"wasm-bytes".to_vec(),
+                    digest: None,
+                },
+            ],
+        };
+        let client = FakeClient { image };
+        let opts = ComponentResolveOptions {
+            cache_dir: temp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let resolver = OciComponentResolver::with_client(client, opts);
+        let reference = "ghcr.io/greentic/components@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+        let resolved = resolver
+            .resolve_refs(&ComponentsExtension {
+                refs: vec![reference.to_string()],
+                mode: ComponentsMode::Eager,
+            })
+            .await
+            .unwrap();
+        let resolved = &resolved[0];
+        assert_eq!(
+            resolved.path.file_name().and_then(|s| s.to_str()),
+            Some("component_templates.wasm")
+        );
+        let cache_dir = resolved.path.parent().unwrap();
+        assert!(cache_dir.join("component.manifest.json").exists());
+        assert!(cache_dir.join("component_templates.wasm").exists());
+        let legacy_path = cache_dir.join(DEFAULT_WASM_FILENAME);
+        if legacy_path.exists() {
+            let metadata = fs::symlink_metadata(&legacy_path).unwrap();
+            assert!(metadata.file_type().is_symlink());
+        }
+
+        let client_offline = FakeClient {
+            image: PulledImage {
+                digest: None,
+                layers: Vec::new(),
+            },
+        };
+        let opts_offline = ComponentResolveOptions {
+            cache_dir: temp.path().to_path_buf(),
+            offline: true,
+            ..Default::default()
+        };
+        let resolver_offline = OciComponentResolver::with_client(client_offline, opts_offline);
+        let resolved_offline = resolver_offline
+            .resolve_refs(&ComponentsExtension {
+                refs: vec![reference.to_string()],
+                mode: ComponentsMode::Eager,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            resolved_offline[0]
+                .path
+                .file_name()
+                .and_then(|s| s.to_str()),
+            Some("component_templates.wasm")
         );
     }
 }
