@@ -31,11 +31,13 @@ static DEFAULT_ACCEPTED_MANIFEST_TYPES: &[&str] = &[
     DOCKER_MANIFEST_LIST_MEDIA_TYPE,
 ];
 
+const COMPONENT_MANIFEST_MEDIA_TYPE: &str = "application/vnd.greentic.component.manifest+json";
+
 /// Preferred component layer media types.
 static DEFAULT_LAYER_MEDIA_TYPES: &[&str] = &[
     "application/vnd.wasm.component.v1+wasm",
     "application/vnd.module.wasm.content.layer.v1+wasm",
-    "application/vnd.greentic.component.manifest+json",
+    COMPONENT_MANIFEST_MEDIA_TYPE,
     "application/wasm",
     "application/octet-stream",
 ];
@@ -308,7 +310,7 @@ impl OciCache {
             source,
         })?;
 
-        let artifact_path = dir.join("component.wasm");
+        let artifact_path = self.artifact_path_for_media_type(digest, media_type);
         fs::write(&artifact_path, data).map_err(|source| OciComponentError::Io {
             reference: reference.to_string(),
             source,
@@ -340,15 +342,15 @@ impl OciCache {
     }
 
     fn try_hit(&self, digest: &str, reference: &str) -> Option<ResolvedComponent> {
-        let path = self.artifact_path(digest);
-        if !path.exists() {
-            return None;
-        }
         let metadata = self.read_metadata(digest).ok();
         let media_type = metadata
             .as_ref()
             .map(|m| m.media_type.clone())
             .unwrap_or_else(|| "application/octet-stream".to_string());
+        let path = self.artifact_path_for_media_type(digest, &media_type);
+        if !path.exists() {
+            return None;
+        }
         Some(ResolvedComponent {
             original_reference: reference.to_string(),
             resolved_digest: digest.to_string(),
@@ -369,8 +371,17 @@ impl OciCache {
         self.root.join(trim_digest_prefix(digest))
     }
 
-    fn artifact_path(&self, digest: &str) -> PathBuf {
-        self.artifact_dir(digest).join("component.wasm")
+    fn artifact_path_for_media_type(&self, digest: &str, media_type: &str) -> PathBuf {
+        self.artifact_dir(digest)
+            .join(Self::artifact_filename(media_type))
+    }
+
+    fn artifact_filename(media_type: &str) -> &'static str {
+        if media_type == COMPONENT_MANIFEST_MEDIA_TYPE {
+            "component.manifest.json"
+        } else {
+            "component.wasm"
+        }
     }
 
     fn metadata_path(&self, digest: &str) -> PathBuf {
@@ -448,6 +459,43 @@ impl RegistryClient for DefaultRegistryClient {
             )
             .await?;
         Ok(convert_image(image))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_writes_manifest_and_wasm_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = OciCache::new(temp.path().to_path_buf());
+        let digest = "sha256:deadbeef";
+        let reference = "ghcr.io/greentic/components@sha256:deadbeef";
+
+        let manifest_path = cache
+            .write(
+                digest,
+                COMPONENT_MANIFEST_MEDIA_TYPE,
+                br#"{"name":"demo"}"#,
+                reference,
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            manifest_path.file_name().and_then(|s| s.to_str()),
+            Some("component.manifest.json")
+        );
+        assert!(manifest_path.exists());
+
+        let wasm_path = cache
+            .write(digest, "application/wasm", b"wasm-bytes", reference, None)
+            .unwrap();
+        assert_eq!(
+            wasm_path.file_name().and_then(|s| s.to_str()),
+            Some("component.wasm")
+        );
+        assert!(wasm_path.exists());
     }
 }
 

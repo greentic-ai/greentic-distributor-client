@@ -180,6 +180,44 @@ async fn allows_tag_refs_when_opted_in() {
 }
 
 #[tokio::test]
+async fn caches_manifest_and_wasm_with_expected_filenames() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest_bytes = br#"{"name":"demo"}"#;
+    let manifest_digest = digest_for(manifest_bytes);
+    let manifest_ref = format!("ghcr.io/greentic/components@{manifest_digest}");
+    let wasm_bytes = b"wasm-bytes";
+    let wasm_digest = digest_for(wasm_bytes);
+    let wasm_ref = format!("ghcr.io/greentic/components@{wasm_digest}");
+
+    let mock = MockRegistryClient::with_image(
+        &manifest_ref,
+        pulled_image(
+            manifest_bytes,
+            "application/vnd.greentic.component.manifest+json",
+            &manifest_digest,
+        ),
+    );
+    mock.images.lock().unwrap().insert(
+        wasm_ref.clone(),
+        pulled_image(wasm_bytes, "application/wasm", &wasm_digest),
+    );
+    let resolver = OciComponentResolver::with_client(mock, options(&temp));
+
+    let results = resolver
+        .resolve_refs(&extension(vec![&manifest_ref, &wasm_ref]))
+        .await
+        .unwrap();
+    assert_eq!(
+        results[0].path.file_name().and_then(|s| s.to_str()),
+        Some("component.manifest.json")
+    );
+    assert_eq!(
+        results[1].path.file_name().and_then(|s| s.to_str()),
+        Some("component.wasm")
+    );
+}
+
+#[tokio::test]
 async fn invalid_reference_surfaces_error() {
     let temp = tempfile::tempdir().unwrap();
     let resolver = OciComponentResolver::with_client(MockRegistryClient::default(), options(&temp));
