@@ -1,7 +1,8 @@
 use crate::dist::{DistClient, DistOptions};
 use crate::oci_components::default_cache_root;
 use clap::{Parser, Subcommand};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -91,6 +92,18 @@ struct PullOutput<'a> {
     digest: &'a str,
     cache_path: Option<&'a std::path::Path>,
     fetched: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ComponentManifest {
+    #[serde(default)]
+    artifacts: Option<ComponentManifestArtifacts>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ComponentManifestArtifacts {
+    #[serde(default)]
+    component_wasm: Option<String>,
 }
 
 pub async fn run_from_env() -> Result<(), CliError> {
@@ -237,6 +250,38 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
             println!("cache dir: {}", inspection.cache_dir.display());
             println!("component.wasm: {}", wasm_path.exists());
             println!("component.manifest.json: {}", manifest_path.exists());
+            if manifest_path.exists() {
+                let manifest_bytes = fs::read(&manifest_path).map_err(|err| CliError {
+                    code: 2,
+                    message: format!("failed to read component.manifest.json: {err}"),
+                })?;
+                let manifest: ComponentManifest =
+                    serde_json::from_slice(&manifest_bytes).map_err(|err| CliError {
+                        code: 2,
+                        message: format!("failed to parse component.manifest.json: {err}"),
+                    })?;
+                let component_wasm = manifest
+                    .artifacts
+                    .and_then(|a| a.component_wasm)
+                    .map(|name| name.trim().to_string())
+                    .filter(|name| !name.is_empty());
+                if let Some(component_wasm) = component_wasm {
+                    let manifest_wasm_path = inspection.cache_dir.join(&component_wasm);
+                    let exists = manifest_wasm_path.exists();
+                    println!("manifest component_wasm: {component_wasm}");
+                    println!("manifest component_wasm exists: {exists}");
+                    let mismatch = !exists;
+                    println!("manifest component_wasm mismatch: {mismatch}");
+                    if mismatch {
+                        eprintln!(
+                            "error: manifest component_wasm `{}` missing from cache",
+                            component_wasm
+                        );
+                    }
+                } else {
+                    println!("manifest component_wasm: <missing>");
+                }
+            }
             if show_media_type {
                 println!("selected media type: {}", inspection.selected_media_type);
             }

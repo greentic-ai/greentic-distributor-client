@@ -298,6 +298,56 @@ async fn caches_manifest_layer_alongside_wasm() {
 }
 
 #[tokio::test]
+async fn caches_manifest_named_wasm_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest_bytes = br#"{"artifacts":{"component_wasm":"component_templates.wasm"}}"#;
+    let manifest_digest = digest_for(manifest_bytes);
+    let wasm_bytes = b"wasm-bytes";
+    let wasm_digest = digest_for(wasm_bytes);
+    let reference = format!("ghcr.io/greentic/components@{wasm_digest}");
+
+    let image = pulled_image_with_layers(vec![
+        PulledLayer {
+            media_type: "application/vnd.greentic.component.manifest+json".to_string(),
+            data: manifest_bytes.to_vec(),
+            digest: Some(manifest_digest),
+        },
+        PulledLayer {
+            media_type: "application/wasm".to_string(),
+            data: wasm_bytes.to_vec(),
+            digest: Some(wasm_digest.clone()),
+        },
+    ]);
+
+    let mock = MockRegistryClient::with_image(&reference, image);
+    let resolver = OciComponentResolver::with_client(mock, options(&temp));
+
+    let results = resolver
+        .resolve_refs(&extension(vec![&reference]))
+        .await
+        .unwrap();
+
+    assert_eq!(results[0].media_type, "application/wasm");
+    let cache_dir = results[0].path.parent().unwrap();
+    let manifest_path = cache_dir.join("component.manifest.json");
+    let named_wasm_path = cache_dir.join("component_templates.wasm");
+    let legacy_wasm_path = cache_dir.join("component.wasm");
+
+    assert!(manifest_path.exists());
+    assert!(named_wasm_path.exists());
+    assert!(legacy_wasm_path.exists());
+
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    let manifest_name = manifest
+        .get("artifacts")
+        .and_then(|v| v.get("component_wasm"))
+        .and_then(|v| v.as_str())
+        .unwrap();
+    assert!(cache_dir.join(manifest_name).exists());
+}
+
+#[tokio::test]
 async fn writes_manifest_path_when_only_manifest_layer_present() {
     let temp = tempfile::tempdir().unwrap();
     let manifest_bytes = br#"{"name":"demo"}"#;

@@ -32,6 +32,7 @@ static DEFAULT_ACCEPTED_MANIFEST_TYPES: &[&str] = &[
 ];
 
 const COMPONENT_MANIFEST_MEDIA_TYPE: &str = "application/vnd.greentic.component.manifest+json";
+const DEFAULT_WASM_FILENAME: &str = "component.wasm";
 
 /// Preferred component layer media types.
 static DEFAULT_LAYER_MEDIA_TYPES: &[&str] = &[
@@ -96,6 +97,18 @@ pub struct ResolvedComponent {
     pub path: PathBuf,
     pub fetched_from_network: bool,
     pub manifest_digest: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ComponentManifest {
+    #[serde(default)]
+    artifacts: Option<ComponentManifestArtifacts>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ComponentManifestArtifacts {
+    #[serde(default)]
+    component_wasm: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -209,6 +222,11 @@ impl<C: RegistryClient> OciComponentResolver<C> {
             .layers
             .iter()
             .find(|layer| layer.media_type == COMPONENT_MANIFEST_MEDIA_TYPE);
+        let manifest_wasm_name = if let Some(layer) = manifest_layer {
+            manifest_component_wasm_name(&layer.data, reference)?
+        } else {
+            None
+        };
         let resolved_digest = image
             .digest
             .clone()
@@ -232,6 +250,7 @@ impl<C: RegistryClient> OciComponentResolver<C> {
             &chosen_layer.data,
             reference,
             manifest_digest.clone(),
+            manifest_wasm_name.as_deref(),
         )?;
         if let Some(layer) = manifest_layer
             && layer.media_type != chosen_layer.media_type
@@ -296,6 +315,32 @@ pub(crate) fn default_cache_root() -> PathBuf {
     PathBuf::from(".greentic").join("cache").join("components")
 }
 
+fn manifest_component_wasm_name(
+    data: &[u8],
+    reference: &str,
+) -> Result<Option<String>, OciComponentError> {
+    let manifest: ComponentManifest =
+        serde_json::from_slice(data).map_err(|source| OciComponentError::ManifestParse {
+            reference: reference.to_string(),
+            source,
+        })?;
+    let name = manifest
+        .artifacts
+        .and_then(|artifacts| artifacts.component_wasm)
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty());
+    if let Some(name) = name.as_deref() {
+        let path = std::path::Path::new(name);
+        if path.components().count() != 1 {
+            return Err(OciComponentError::InvalidManifestWasmName {
+                reference: reference.to_string(),
+                name: name.to_string(),
+            });
+        }
+    }
+    Ok(name)
+}
+
 #[derive(Clone, Debug)]
 struct OciCache {
     root: PathBuf,
@@ -334,8 +379,23 @@ impl OciCache {
         data: &[u8],
         reference: &str,
         manifest_digest: Option<String>,
+        manifest_wasm_name: Option<&str>,
     ) -> Result<PathBuf, OciComponentError> {
-        let artifact_path = self.write_layer_data(digest, media_type, data, reference)?;
+        let artifact_path = if media_type == COMPONENT_MANIFEST_MEDIA_TYPE {
+            self.write_layer_data(digest, media_type, data, reference)?
+        } else if let Some(name) = manifest_wasm_name {
+            let path = self.write_named_file(digest, name, data, reference)?;
+            if name != DEFAULT_WASM_FILENAME {
+                let legacy_path = self.artifact_dir(digest).join(DEFAULT_WASM_FILENAME);
+                fs::write(&legacy_path, data).map_err(|source| OciComponentError::Io {
+                    reference: reference.to_string(),
+                    source,
+                })?;
+            }
+            path
+        } else {
+            self.write_layer_data(digest, media_type, data, reference)?
+        };
         let dir = self.artifact_dir(digest);
 
         let metadata = CacheMetadata {
@@ -361,6 +421,26 @@ impl OciCache {
         })?;
 
         Ok(artifact_path)
+    }
+
+    fn write_named_file(
+        &self,
+        digest: &str,
+        filename: &str,
+        data: &[u8],
+        reference: &str,
+    ) -> Result<PathBuf, OciComponentError> {
+        let dir = self.artifact_dir(digest);
+        fs::create_dir_all(&dir).map_err(|source| OciComponentError::Io {
+            reference: reference.to_string(),
+            source,
+        })?;
+        let path = dir.join(filename);
+        fs::write(&path, data).map_err(|source| OciComponentError::Io {
+            reference: reference.to_string(),
+            source,
+        })?;
+        Ok(path)
     }
 
     fn write_manifest_layer(
@@ -411,7 +491,7 @@ impl OciCache {
         if media_type == COMPONENT_MANIFEST_MEDIA_TYPE {
             "component.manifest.json"
         } else {
-            "component.wasm"
+            DEFAULT_WASM_FILENAME
         }
     }
 
@@ -532,6 +612,7 @@ mod tests {
                 br#"{"name":"demo"}"#,
                 reference,
                 None,
+                None,
             )
             .unwrap();
         assert_eq!(
@@ -541,13 +622,63 @@ mod tests {
         assert!(manifest_path.exists());
 
         let wasm_path = cache
-            .write(digest, "application/wasm", b"wasm-bytes", reference, None)
+            .write(
+                digest,
+                "application/wasm",
+                b"wasm-bytes",
+                reference,
+                None,
+                None,
+            )
             .unwrap();
         assert_eq!(
             wasm_path.file_name().and_then(|s| s.to_str()),
             Some("component.wasm")
         );
         assert!(wasm_path.exists());
+    }
+
+    #[test]
+    fn cache_writes_manifest_named_wasm_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = OciCache::new(temp.path().to_path_buf());
+        let digest = "sha256:deadbeef";
+        let reference = "ghcr.io/greentic/components@sha256:deadbeef";
+        let manifest_bytes = br#"{"artifacts":{"component_wasm":"component_templates.wasm"}}"#;
+
+        let manifest_path = cache
+            .write(
+                digest,
+                COMPONENT_MANIFEST_MEDIA_TYPE,
+                manifest_bytes,
+                reference,
+                None,
+                None,
+            )
+            .unwrap();
+        assert!(manifest_path.exists());
+
+        let manifest_name = manifest_component_wasm_name(manifest_bytes, reference)
+            .unwrap()
+            .unwrap();
+        let wasm_path = cache
+            .write(
+                digest,
+                "application/wasm",
+                b"wasm-bytes",
+                reference,
+                None,
+                Some(&manifest_name),
+            )
+            .unwrap();
+        assert!(wasm_path.exists());
+        assert!(cache.artifact_dir(digest).join(&manifest_name).exists());
+        assert!(
+            cache
+                .artifact_dir(digest)
+                .join(DEFAULT_WASM_FILENAME)
+                .exists()
+        );
     }
 }
 
@@ -611,4 +742,12 @@ pub enum OciComponentError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("failed to parse component manifest for `{reference}`: {source}")]
+    ManifestParse {
+        reference: String,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("invalid component_wasm filename `{name}` in manifest for `{reference}`")]
+    InvalidManifestWasmName { reference: String, name: String },
 }
