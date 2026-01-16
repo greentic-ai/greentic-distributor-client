@@ -19,7 +19,7 @@ This audit documents what `greentic-distributor-client` supports around OCI/GHCR
 - **Tests:** `tests/oci_components.rs` exercises digest-pinned fetch/caching, tag rejection, offline behavior, tag opt-in, and invalid reference errors with a mock registry client. Cache metadata now records the manifest digest to aid future verification work.
 
 ## Answers to audit questions
-1. **Can the client pull packs from OCI?** No pack fetching exists. New code only handles component references via `OciComponentResolver` (`src/oci_components.rs`). No crate for packs/ORAS is used elsewhere.
+1. **Can the client pull packs from OCI?** Yes, a separate pack fetcher exists under feature `pack-fetch` (`src/oci_packs.rs`) with anonymous HTTPS pulls and caching. Component resolution remains in `src/oci_components.rs`.
 2. **Artifact types understood today?** Previously none; now OCI image/artifact manifests with WASM-oriented layers are handled via `oci-distribution` (anonymous HTTPS).
 3. **Caching?** Previously none. Now content-addressed cache in `cache/oci/<sha256>/component.wasm` with metadata (`src/oci_components.rs`).
 4. **Digest refs enforced?** Previously not. Now digest pins are required by default; tag refs error unless `allow_tags` is enabled, and digest mismatches fail (`OciComponentError::DigestMismatch`).

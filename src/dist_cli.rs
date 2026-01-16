@@ -1,5 +1,7 @@
 use crate::dist::{DistClient, DistOptions};
 use crate::oci_components::default_cache_root;
+#[cfg(feature = "pack-fetch")]
+use crate::oci_packs::{DefaultRegistryClient, OciPackFetcher, PackFetchOptions};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -52,6 +54,16 @@ pub enum Commands {
         #[arg(long)]
         show_media_type: bool,
     },
+    /// Fetch an OCI pack into the local cache
+    #[cfg(feature = "pack-fetch")]
+    Pack {
+        reference: String,
+        /// Allow tag references (digest pins preferred)
+        #[arg(long)]
+        allow_tags: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -94,6 +106,16 @@ struct PullOutput<'a> {
     fetched: bool,
 }
 
+#[cfg(feature = "pack-fetch")]
+#[derive(Serialize)]
+struct PackOutput<'a> {
+    reference: &'a str,
+    digest: &'a str,
+    media_type: &'a str,
+    cache_path: &'a std::path::Path,
+    fetched: bool,
+}
+
 #[derive(Debug, Deserialize)]
 struct ComponentManifest {
     #[serde(default)]
@@ -117,13 +139,15 @@ pub struct CliError {
 }
 
 pub async fn run(cli: Cli) -> Result<(), CliError> {
+    let cache_dir_override = cli.cache_dir.clone();
+    let offline = cli.offline;
     let mut opts = DistOptions::default();
     if let Some(dir) = cli.cache_dir {
         opts.cache_dir = dir;
     } else {
         opts.cache_dir = default_cache_root();
     }
-    opts.offline = cli.offline || opts.offline;
+    opts.offline = offline || opts.offline;
 
     let client = DistClient::new(opts);
 
@@ -284,6 +308,40 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
             }
             if show_media_type {
                 println!("selected media type: {}", inspection.selected_media_type);
+            }
+        }
+        #[cfg(feature = "pack-fetch")]
+        Commands::Pack {
+            reference,
+            allow_tags,
+            json,
+        } => {
+            let mut opts = PackFetchOptions::default();
+            if let Some(dir) = cache_dir_override {
+                opts.cache_dir = dir;
+            }
+            opts.offline = offline;
+            opts.allow_tags = allow_tags;
+
+            let fetcher = OciPackFetcher::<DefaultRegistryClient>::new(opts);
+            let resolved = fetcher
+                .fetch_pack_to_cache(&reference)
+                .await
+                .map_err(|err| CliError {
+                    code: 2,
+                    message: err.to_string(),
+                })?;
+            if json {
+                let out = PackOutput {
+                    reference: &reference,
+                    digest: &resolved.resolved_digest,
+                    media_type: &resolved.media_type,
+                    cache_path: resolved.path.as_path(),
+                    fetched: resolved.fetched_from_network,
+                };
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+            } else {
+                println!("{}", resolved.path.display());
             }
         }
     }

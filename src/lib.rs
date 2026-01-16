@@ -11,6 +11,8 @@ pub mod dist_cli;
 mod http;
 #[cfg(feature = "oci-components")]
 pub mod oci_components;
+#[cfg(feature = "pack-fetch")]
+pub mod oci_packs;
 mod wit_client;
 
 pub use config::DistributorClientConfig;
@@ -20,7 +22,14 @@ pub use error::DistributorError;
 #[cfg(feature = "http-runtime")]
 pub use http::HttpDistributorClient;
 #[cfg(feature = "oci-components")]
-pub use oci_components::*;
+pub use oci_components::{
+    ComponentResolveOptions, ComponentsExtension, ComponentsMode, OciComponentError,
+    OciComponentResolver, ResolvedComponent,
+};
+#[cfg(feature = "pack-fetch")]
+pub use oci_packs::{OciPackError, OciPackFetcher, PackFetchOptions, ResolvedPack};
+#[cfg(feature = "pack-fetch")]
+pub use oci_packs::{fetch_pack, fetch_pack_to_cache};
 pub use source::{ChainedDistributorSource, DistributorSource};
 pub use types::*;
 pub use wit_client::{

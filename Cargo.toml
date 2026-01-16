@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.4.20"
+version = "0.4.21"
 edition = "2024"
 
 [package]
@@ -18,8 +18,9 @@ categories = ["network-programming", "wasm"]
 default = ["dist-cli"]
 http-runtime = ["reqwest"]
 oci-components = ["dirs-next", "oci-distribution", "sha2"]
+pack-fetch = ["dirs-next", "oci-distribution", "sha2"]
 dist-client = ["oci-components", "reqwest"]
-dist-cli = ["clap", "dist-client"]
+dist-cli = ["clap", "dist-client", "pack-fetch"]
 
 [workspace]
 members = [".", "greentic-distributor-dev"]
