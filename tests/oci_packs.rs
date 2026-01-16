@@ -193,6 +193,109 @@ async fn prefers_pack_media_type_when_present() {
 }
 
 #[tokio::test]
+async fn accepts_zip_pack_media_type() {
+    let temp = tempfile::tempdir().unwrap();
+    let zip_bytes = b"zip-pack-bytes";
+    let digest = digest_for(zip_bytes);
+    let reference = format!("ghcr.io/greentic-ai/greentic-packs/foo@{digest}");
+
+    let image = pulled_image_with_layers(vec![PulledLayer {
+        media_type: "application/vnd.greentic.gtpack.v1+zip".to_string(),
+        data: zip_bytes.to_vec(),
+        digest: Some(digest.clone()),
+    }]);
+    let mock = MockRegistryClient::with_image(&reference, image);
+    let fetcher = OciPackFetcher::with_client(mock, options(&temp));
+
+    let resolved = fetcher.fetch_pack_to_cache(&reference).await.unwrap();
+    let cached = std::fs::read(&resolved.path).unwrap();
+    assert_eq!(cached, zip_bytes);
+}
+
+#[tokio::test]
+async fn accepts_markdown_pack_media_type() {
+    let temp = tempfile::tempdir().unwrap();
+    let md_bytes = b"# pack\n";
+    let digest = digest_for(md_bytes);
+    let reference = format!("ghcr.io/greentic-ai/greentic-packs/foo@{digest}");
+
+    let image = pulled_image_with_layers(vec![PulledLayer {
+        media_type: "text/markdown".to_string(),
+        data: md_bytes.to_vec(),
+        digest: Some(digest.clone()),
+    }]);
+    let mock = MockRegistryClient::with_image(&reference, image);
+    let fetcher = OciPackFetcher::with_client(mock, options(&temp));
+
+    let resolved = fetcher.fetch_pack_to_cache(&reference).await.unwrap();
+    let cached = std::fs::read(&resolved.path).unwrap();
+    assert_eq!(cached, md_bytes);
+}
+
+#[tokio::test]
+async fn accepts_additional_pack_media_types() {
+    let temp = tempfile::tempdir().unwrap();
+    let cases = [
+        ("application/octet-stream", b"octet-pack".as_slice()),
+        ("application/json", br#"{"pack":"json"}"#.as_slice()),
+        (
+            "application/vnd.oci.image.layer.v1.tar",
+            b"tar-pack".as_slice(),
+        ),
+        (
+            "application/vnd.oci.image.layer.v1.tar+gzip",
+            b"targz-pack".as_slice(),
+        ),
+        (
+            "application/vnd.oci.image.layer.v1.tar+zstd",
+            b"tarzst-pack".as_slice(),
+        ),
+        (
+            "application/vnd.greentic.pack+zip",
+            b"packzip-pack".as_slice(),
+        ),
+    ];
+
+    for (idx, (media_type, bytes)) in cases.iter().enumerate() {
+        let digest = digest_for(bytes);
+        let reference = format!("ghcr.io/greentic-ai/greentic-packs/foo{idx}@{digest}");
+        let image = pulled_image_with_layers(vec![PulledLayer {
+            media_type: (*media_type).to_string(),
+            data: bytes.to_vec(),
+            digest: Some(digest),
+        }]);
+        let mock = MockRegistryClient::with_image(&reference, image);
+        let fetcher = OciPackFetcher::with_client(mock, options(&temp));
+
+        let resolved = fetcher.fetch_pack_to_cache(&reference).await.unwrap();
+        let cached = std::fs::read(&resolved.path).unwrap();
+        assert_eq!(cached, *bytes);
+    }
+}
+
+#[tokio::test]
+async fn accepts_custom_layer_media_type_override() {
+    let temp = tempfile::tempdir().unwrap();
+    let bytes = b"<html>pack</html>";
+    let digest = digest_for(bytes);
+    let reference = format!("ghcr.io/greentic-ai/greentic-packs/foo@{digest}");
+
+    let image = pulled_image_with_layers(vec![PulledLayer {
+        media_type: "text/html".to_string(),
+        data: bytes.to_vec(),
+        digest: Some(digest.clone()),
+    }]);
+    let mock = MockRegistryClient::with_image(&reference, image);
+    let mut opts = options(&temp);
+    opts.accepted_layer_media_types = vec!["text/html".to_string()];
+    let fetcher = OciPackFetcher::with_client(mock, opts);
+
+    let resolved = fetcher.fetch_pack_to_cache(&reference).await.unwrap();
+    let cached = std::fs::read(&resolved.path).unwrap();
+    assert_eq!(cached, bytes);
+}
+
+#[tokio::test]
 async fn falls_back_to_first_layer_without_preferred_media_type() {
     let temp = tempfile::tempdir().unwrap();
     let first_bytes = br#"{"pack":"first"}"#;

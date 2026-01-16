@@ -32,6 +32,14 @@ static DEFAULT_ACCEPTED_MANIFEST_TYPES: &[&str] = &[
 ];
 
 const PACK_LAYER_MEDIA_TYPE: &str = "application/vnd.greentic.pack+json";
+const PACK_LAYER_MEDIA_TYPE_ZIP: &str = "application/vnd.greentic.gtpack.v1+zip";
+const PACK_LAYER_MEDIA_TYPE_PACK_ZIP: &str = "application/vnd.greentic.pack+zip";
+const PACK_LAYER_MEDIA_TYPE_MARKDOWN: &str = "text/markdown";
+const PACK_LAYER_MEDIA_TYPE_OCTET_STREAM: &str = "application/octet-stream";
+const PACK_LAYER_MEDIA_TYPE_JSON: &str = "application/json";
+const PACK_LAYER_MEDIA_TYPE_TAR: &str = "application/vnd.oci.image.layer.v1.tar";
+const PACK_LAYER_MEDIA_TYPE_TAR_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
+const PACK_LAYER_MEDIA_TYPE_TAR_ZSTD: &str = "application/vnd.oci.image.layer.v1.tar+zstd";
 const PACK_FILENAME: &str = "pack.gtpack";
 
 /// Configuration for fetching OCI packs.
@@ -41,6 +49,8 @@ pub struct PackFetchOptions {
     pub offline: bool,
     pub cache_dir: PathBuf,
     pub accepted_manifest_types: Vec<String>,
+    /// Allowed layer media types when pulling from registry.
+    pub accepted_layer_media_types: Vec<String>,
     pub preferred_layer_media_types: Vec<String>,
 }
 
@@ -54,7 +64,23 @@ impl Default for PackFetchOptions {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            preferred_layer_media_types: vec![PACK_LAYER_MEDIA_TYPE.to_string()],
+            accepted_layer_media_types: vec![
+                PACK_LAYER_MEDIA_TYPE.to_string(),
+                PACK_LAYER_MEDIA_TYPE_ZIP.to_string(),
+                PACK_LAYER_MEDIA_TYPE_PACK_ZIP.to_string(),
+                PACK_LAYER_MEDIA_TYPE_MARKDOWN.to_string(),
+                PACK_LAYER_MEDIA_TYPE_OCTET_STREAM.to_string(),
+                PACK_LAYER_MEDIA_TYPE_JSON.to_string(),
+                PACK_LAYER_MEDIA_TYPE_TAR.to_string(),
+                PACK_LAYER_MEDIA_TYPE_TAR_GZIP.to_string(),
+                PACK_LAYER_MEDIA_TYPE_TAR_ZSTD.to_string(),
+            ],
+            preferred_layer_media_types: vec![
+                PACK_LAYER_MEDIA_TYPE.to_string(),
+                PACK_LAYER_MEDIA_TYPE_ZIP.to_string(),
+                PACK_LAYER_MEDIA_TYPE_PACK_ZIP.to_string(),
+                PACK_LAYER_MEDIA_TYPE_MARKDOWN.to_string(),
+            ],
         }
     }
 }
@@ -153,7 +179,7 @@ impl<C: RegistryClient> OciPackFetcher<C> {
 
         let accepted_layer_types = self
             .opts
-            .accepted_manifest_types
+            .accepted_layer_media_types
             .iter()
             .map(|s| s.as_str())
             .collect::<Vec<_>>();

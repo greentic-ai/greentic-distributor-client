@@ -5,7 +5,8 @@ This document describes the minimal OCI pack fetcher in `greentic-distributor-cl
 ## Overview
 - Anonymous HTTPS pulls only (no auth support).
 - Packs are expected as a single layer containing the `.gtpack` bytes.
-- Preferred layer media type: `application/vnd.greentic.pack+json`.
+- Accepted layer media types: `application/vnd.greentic.pack+json`, `application/vnd.greentic.gtpack.v1+zip`, `application/vnd.greentic.pack+zip`, `text/markdown`, `application/octet-stream`, `application/json`, `application/vnd.oci.image.layer.v1.tar`, `application/vnd.oci.image.layer.v1.tar+gzip`, `application/vnd.oci.image.layer.v1.tar+zstd`.
+- Preferred layer media types (selection order): `application/vnd.greentic.pack+json`, `application/vnd.greentic.gtpack.v1+zip`, `application/vnd.greentic.pack+zip`, `text/markdown`.
 - If the preferred media type is missing, the first layer is used.
 - Content-addressed cache writes `pack.gtpack` and `metadata.json`.
 
