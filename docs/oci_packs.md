@@ -11,7 +11,7 @@ This document describes the minimal OCI pack fetcher in `greentic-distributor-cl
 - Content-addressed cache writes `pack.gtpack` and `metadata.json`.
 
 ## Feature flag
-Enable the `pack-fetch` feature:
+Enable the `pack-fetch` feature (also included in `dist-client`):
 
 ```toml
 greentic-distributor-client = { version = "0.4", features = ["pack-fetch"] }

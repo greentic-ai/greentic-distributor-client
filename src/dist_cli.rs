@@ -1,7 +1,9 @@
 use crate::dist::{DistClient, DistOptions};
 use crate::oci_components::default_cache_root;
 #[cfg(feature = "pack-fetch")]
-use crate::oci_packs::{DefaultRegistryClient, OciPackFetcher, PackFetchOptions};
+use crate::oci_packs::{
+    DefaultRegistryClient, OciPackFetcher, PackFetchOptions, RegistryClient, ResolvedPack,
+};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -133,12 +135,21 @@ pub async fn run_from_env() -> Result<(), CliError> {
     run(cli).await
 }
 
+#[derive(Debug)]
 pub struct CliError {
     pub code: i32,
     pub message: String,
 }
 
 pub async fn run(cli: Cli) -> Result<(), CliError> {
+    run_with_pack_client(cli, DefaultRegistryClient::default_client()).await
+}
+
+#[cfg(feature = "pack-fetch")]
+pub async fn run_with_pack_client<C: RegistryClient>(
+    cli: Cli,
+    pack_client: C,
+) -> Result<(), CliError> {
     let cache_dir_override = cli.cache_dir.clone();
     let offline = cli.offline;
     let mut opts = DistOptions::default();
@@ -316,21 +327,14 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
             allow_tags,
             json,
         } => {
-            let mut opts = PackFetchOptions::default();
-            if let Some(dir) = cache_dir_override {
-                opts.cache_dir = dir;
-            }
-            opts.offline = offline;
-            opts.allow_tags = allow_tags;
-
-            let fetcher = OciPackFetcher::<DefaultRegistryClient>::new(opts);
-            let resolved = fetcher
-                .fetch_pack_to_cache(&reference)
-                .await
-                .map_err(|err| CliError {
-                    code: 2,
-                    message: err.to_string(),
-                })?;
+            let resolved = fetch_pack_for_cli(
+                &reference,
+                allow_tags,
+                cache_dir_override,
+                offline,
+                pack_client,
+            )
+            .await?;
             if json {
                 let out = PackOutput {
                     reference: &reference,
@@ -347,6 +351,31 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+#[cfg(feature = "pack-fetch")]
+pub async fn fetch_pack_for_cli<C: RegistryClient>(
+    reference: &str,
+    allow_tags: bool,
+    cache_dir_override: Option<PathBuf>,
+    offline: bool,
+    client: C,
+) -> Result<ResolvedPack, CliError> {
+    let mut opts = PackFetchOptions::default();
+    if let Some(dir) = cache_dir_override {
+        opts.cache_dir = dir;
+    }
+    opts.offline = offline;
+    opts.allow_tags = allow_tags;
+
+    let fetcher = OciPackFetcher::with_client(client, opts);
+    fetcher
+        .fetch_pack_to_cache(reference)
+        .await
+        .map_err(|err| CliError {
+            code: 2,
+            message: err.to_string(),
+        })
 }
 
 impl CliError {

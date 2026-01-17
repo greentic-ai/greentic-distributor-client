@@ -122,7 +122,7 @@ Exit codes:
 - `10` internal error
 
 ## Library API (feature `dist-client`)
-Use `DistClient` to reuse the same resolution and cache logic programmatically:
+Use `DistClient` to reuse the same resolution and cache logic programmatically. The `dist-client` feature also includes the OCI pack fetcher APIs (`fetch_pack`, `OciPackFetcher`):
 
 ```rust
 use greentic_distributor_client::dist::{DistClient, DistOptions};
