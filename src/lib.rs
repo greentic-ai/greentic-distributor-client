@@ -13,6 +13,8 @@ mod http;
 pub mod oci_components;
 #[cfg(feature = "pack-fetch")]
 pub mod oci_packs;
+#[cfg(feature = "runner-api")]
+pub mod runner_api;
 mod wit_client;
 
 pub use config::DistributorClientConfig;
