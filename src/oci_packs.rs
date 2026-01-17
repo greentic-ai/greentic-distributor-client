@@ -33,6 +33,7 @@ static DEFAULT_ACCEPTED_MANIFEST_TYPES: &[&str] = &[
 
 const PACK_LAYER_MEDIA_TYPE: &str = "application/vnd.greentic.pack+json";
 const PACK_LAYER_MEDIA_TYPE_ZIP: &str = "application/vnd.greentic.gtpack.v1+zip";
+const PACK_LAYER_MEDIA_TYPE_ZIP_LEGACY: &str = "application/vnd.greentic.gtpack+zip";
 const PACK_LAYER_MEDIA_TYPE_PACK_ZIP: &str = "application/vnd.greentic.pack+zip";
 const PACK_LAYER_MEDIA_TYPE_MARKDOWN: &str = "text/markdown";
 const PACK_LAYER_MEDIA_TYPE_OCTET_STREAM: &str = "application/octet-stream";
@@ -67,6 +68,7 @@ impl Default for PackFetchOptions {
             accepted_layer_media_types: vec![
                 PACK_LAYER_MEDIA_TYPE.to_string(),
                 PACK_LAYER_MEDIA_TYPE_ZIP.to_string(),
+                PACK_LAYER_MEDIA_TYPE_ZIP_LEGACY.to_string(),
                 PACK_LAYER_MEDIA_TYPE_PACK_ZIP.to_string(),
                 PACK_LAYER_MEDIA_TYPE_MARKDOWN.to_string(),
                 PACK_LAYER_MEDIA_TYPE_OCTET_STREAM.to_string(),
@@ -78,6 +80,7 @@ impl Default for PackFetchOptions {
             preferred_layer_media_types: vec![
                 PACK_LAYER_MEDIA_TYPE.to_string(),
                 PACK_LAYER_MEDIA_TYPE_ZIP.to_string(),
+                PACK_LAYER_MEDIA_TYPE_ZIP_LEGACY.to_string(),
                 PACK_LAYER_MEDIA_TYPE_PACK_ZIP.to_string(),
                 PACK_LAYER_MEDIA_TYPE_MARKDOWN.to_string(),
             ],
