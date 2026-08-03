@@ -14,6 +14,8 @@ mod http;
 pub mod oci_components;
 #[cfg(feature = "pack-fetch")]
 pub mod oci_packs;
+#[cfg(feature = "pack-push")]
+pub mod oci_push;
 #[cfg(feature = "runner-api")]
 pub mod runner_api;
 #[cfg(feature = "dist-client")]
