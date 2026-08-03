@@ -31,13 +31,26 @@ jobs:
         uses: cargo-bins/cargo-binstall@main
 
       - name: Install coverage toolchain binaries
+        # Without a token binstall queries api.github.com anonymously and gets
+        # rate-limited (403) per runner IP. It does not fail on 403: it falls
+        # back to building from source with `cargo install` (no --locked), and
+        # cargo-nextest has a compile_error! rejecting exactly that, so the job
+        # burns ~11 minutes and dies with a fake-looking Rust build break.
+        # The token lifts the rate limit; --disable-strategies compile turns any
+        # remaining fallback into an immediate, honest failure. All three tools
+        # publish prebuilt binaries, so the compile strategy is never needed.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Force-reinstall every binstall target: Swatinem/rust-cache restores
           # ~/.cargo/.crates2.json (binstall's tracking) but does not always
           # restore the binary itself, leaving binstall to skip install while
           # the binary is missing from PATH. --force sidesteps that.
-          cargo binstall --no-confirm --force cargo-nextest cargo-llvm-cov
-          cargo binstall --no-confirm --force greentic-dev
+          cargo binstall --no-confirm --force --disable-strategies compile cargo-nextest cargo-llvm-cov
+          cargo binstall --no-confirm --force --disable-strategies compile greentic-dev
+          command -v cargo-nextest
+          command -v cargo-llvm-cov
+          command -v greentic-dev
           greentic-dev --version
 
       - name: Run coverage policy checks
