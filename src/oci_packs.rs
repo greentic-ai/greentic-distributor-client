@@ -640,6 +640,7 @@ impl DefaultRegistryClient {
 
     /// The underlying `oci-distribution` client, for sibling modules that need
     /// to drive it directly (the push path).
+    #[cfg(feature = "pack-push")]
     pub(crate) fn inner_client(&self) -> &Client {
         &self.inner
     }

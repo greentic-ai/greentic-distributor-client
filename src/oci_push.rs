@@ -65,7 +65,7 @@ pub enum OciPushError {
 /// Pushing half of the registry contract.
 ///
 /// Deliberately NOT a method on `oci_packs::RegistryClient`: that trait has
-/// seven implementors, four of them test mocks, and every one would break.
+/// five implementors, four of them test mocks, and every one would break.
 /// `DefaultRegistryClient` implements both.
 #[async_trait]
 pub trait RegistryPusher: Send + Sync {
@@ -90,8 +90,10 @@ impl RegistryPusher for DefaultRegistryClient {
             media_type.to_string(),
             None,
         )];
-        // An artifact, not a runnable image: the config is an empty JSON object,
-        // which is what the fetch path's manifest handling already tolerates.
+        // An artifact, not a runnable image: the fetch path never inspects the
+        // config blob's content or media type at all, so its shape is
+        // irrelevant. An empty JSON object is the conventional filler for a
+        // non-runnable artifact.
         let config = Config::new(
             b"{}".to_vec(),
             "application/vnd.oci.image.config.v1+json".to_string(),
