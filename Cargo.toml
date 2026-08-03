@@ -55,6 +55,9 @@ pack-fetch = [
     "dirs-next",
     "oci-distribution",
 ]
+pack-push = [
+    "pack-fetch",
+]
 runner-api = [
     "dirs-next",
     "oci-distribution",
