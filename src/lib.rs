@@ -61,6 +61,8 @@ pub use oci_packs::{
     fetch_pack_to_cache_with_options_and_client, fetch_pack_with_options,
     fetch_pack_with_options_and_client,
 };
+#[cfg(feature = "pack-push")]
+pub use oci_push::{OciPushError, PushedPack, RegistryPusher, push_pack_with_client};
 pub use signing::{
     DSSE_PAYLOAD_TYPE_INTOTO, DsseEnvelope, DsseSignature, INTOTO_STATEMENT_TYPE, InTotoStatement,
     SLSA_PROVENANCE_PREDICATE_TYPE, SigningError, SlsaProvenance, Subject, TrustRoot, TrustedKey,

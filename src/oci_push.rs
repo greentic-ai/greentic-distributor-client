@@ -5,7 +5,17 @@
 //! unfetchable. `media_type_is_always_acceptable_to_the_fetcher` is what keeps
 //! the two halves honest.
 
-use crate::oci_packs::{PACK_LAYER_MEDIA_TYPE_OCTET_STREAM, PACK_LAYER_MEDIA_TYPE_ZIP};
+use std::str::FromStr;
+
+use async_trait::async_trait;
+use oci_distribution::Reference;
+use oci_distribution::client::{Config, ImageLayer};
+use oci_distribution::errors::OciDistributionError;
+
+use crate::oci_packs::DefaultRegistryClient;
+use crate::oci_packs::{
+    PACK_LAYER_MEDIA_TYPE_OCTET_STREAM, PACK_LAYER_MEDIA_TYPE_ZIP, compute_digest,
+};
 
 /// A pushed artifact and the digest of its CONTENT.
 ///
@@ -37,6 +47,80 @@ pub fn layer_media_type_for(bytes: &[u8]) -> &'static str {
         return PACK_LAYER_MEDIA_TYPE_ZIP;
     }
     PACK_LAYER_MEDIA_TYPE_OCTET_STREAM
+}
+
+/// Errors from pushing an artifact.
+#[derive(Debug, thiserror::Error)]
+pub enum OciPushError {
+    #[error("invalid OCI reference `{reference}`: {source}")]
+    InvalidReference {
+        reference: String,
+        #[source]
+        source: oci_distribution::ParseError,
+    },
+    #[error("registry rejected the push: {0}")]
+    Registry(#[from] OciDistributionError),
+}
+
+/// Pushing half of the registry contract.
+///
+/// Deliberately NOT a method on `oci_packs::RegistryClient`: that trait has
+/// seven implementors, four of them test mocks, and every one would break.
+/// `DefaultRegistryClient` implements both.
+#[async_trait]
+pub trait RegistryPusher: Send + Sync {
+    async fn push_artifact(
+        &self,
+        reference: &Reference,
+        bytes: &[u8],
+        media_type: &str,
+    ) -> Result<(), OciDistributionError>;
+}
+
+#[async_trait]
+impl RegistryPusher for DefaultRegistryClient {
+    async fn push_artifact(
+        &self,
+        reference: &Reference,
+        bytes: &[u8],
+        media_type: &str,
+    ) -> Result<(), OciDistributionError> {
+        let layers = vec![ImageLayer::new(
+            bytes.to_vec(),
+            media_type.to_string(),
+            None,
+        )];
+        // An artifact, not a runnable image: the config is an empty JSON object,
+        // which is what the fetch path's manifest handling already tolerates.
+        let config = Config::new(
+            b"{}".to_vec(),
+            "application/vnd.oci.image.config.v1+json".to_string(),
+            None,
+        );
+        self.inner_client()
+            .push(reference, &layers, config, &self.registry_auth(), None)
+            .await
+            .map(|_| ())
+    }
+}
+
+/// Push `bytes` to `reference`, returning the reference and the content digest.
+pub async fn push_pack_with_client<P: RegistryPusher>(
+    client: &P,
+    reference: &str,
+    bytes: &[u8],
+) -> Result<PushedPack, OciPushError> {
+    let parsed =
+        Reference::from_str(reference).map_err(|source| OciPushError::InvalidReference {
+            reference: reference.to_string(),
+            source,
+        })?;
+    let media_type = layer_media_type_for(bytes);
+    client.push_artifact(&parsed, bytes, media_type).await?;
+    Ok(PushedPack {
+        reference: reference.to_string(),
+        digest: compute_digest(bytes),
+    })
 }
 
 #[cfg(test)]

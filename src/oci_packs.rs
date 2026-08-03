@@ -575,12 +575,7 @@ impl RegistryClient for DefaultRegistryClient {
             .iter()
             .map(|media_type| media_type.as_str())
             .collect::<Vec<_>>();
-        let auth = match &self.auth {
-            RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
-            RegistryClientAuth::Basic { username, password } => {
-                RegistryAuth::Basic(username.clone(), password.clone())
-            }
-        };
+        let auth = self.registry_auth();
         let image = self
             .inner
             .pull(reference, &auth, accepted_media_type_refs)
@@ -629,6 +624,24 @@ impl DefaultRegistryClient {
             password: password.into(),
         };
         client
+    }
+
+    /// The `oci-distribution` auth for this client's configured credentials.
+    /// Shared by pull and push so the two can never disagree about how a
+    /// credential is presented.
+    pub(crate) fn registry_auth(&self) -> RegistryAuth {
+        match &self.auth {
+            RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
+            RegistryClientAuth::Basic { username, password } => {
+                RegistryAuth::Basic(username.clone(), password.clone())
+            }
+        }
+    }
+
+    /// The underlying `oci-distribution` client, for sibling modules that need
+    /// to drive it directly (the push path).
+    pub(crate) fn inner_client(&self) -> &Client {
+        &self.inner
     }
 
     async fn expand_accepted_media_types(
