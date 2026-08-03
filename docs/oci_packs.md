@@ -49,3 +49,23 @@ Each digest is stored at `<cache>/<sha256>/pack.gtpack` with `metadata.json`.
 - No registry auth (public GHCR only).
 - Digest pins are enforced by default (tags require `allow_tags = true`).
 - No signature/provenance verification.
+
+## Push/pull round-trip (E2E)
+`tests/oci_push_e2e.rs` proves that an artifact pushed with `push_pack_with_client`
+(`pack-push` feature, see `src/oci_push.rs`) is fetchable byte-for-byte through
+this crate's own `OciPackFetcher` — the same fetch path `greentic-start` uses at
+container boot. It is the only check that push and pull actually agree on media
+type and manifest shape rather than merely being internally consistent with
+themselves.
+
+The test is skipped by default and needs Docker plus a local registry. Run it:
+
+```bash
+docker run -d --rm -p 5000:5000 --name gtc-push-e2e registry:2
+OCI_PUSH_E2E=1 cargo test --features pack-push --test oci_push_e2e -- --nocapture
+docker rm -f gtc-push-e2e
+```
+
+Without `OCI_PUSH_E2E=1` the test passes trivially, printing a skip message —
+`cargo test --features pack-push --test oci_push_e2e` needs no Docker at all,
+so no one's gate newly depends on it.
