@@ -1,6 +1,15 @@
 //! Round-trip: push an artifact, then fetch it back through the SAME fetch path
 //! `greentic-start` uses at container boot, and require the bytes to match.
 //!
+//! Covers BOTH payload shapes `layer_media_type_for` distinguishes:
+//! - a SquashFS-magic (`hsqs`) payload, which is what every real `.gtbundle`
+//!   push actually is (`greentic-bundle` packs artifacts as SquashFS, not
+//!   ZIP) and which falls through to the `application/octet-stream` branch;
+//! - a ZIP-magic payload, which takes the dedicated gtpack-zip media type.
+//!
+//! Without both, only the ZIP branch is proven against a real registry and
+//! the branch the product actually takes on every push is untested.
+//!
 //! Skipped unless `OCI_PUSH_E2E=1`, and needs a registry to talk to. Start one:
 //!
 //!   docker run -d --rm -p 5000:5000 --name gtc-push-e2e registry:2
@@ -23,22 +32,13 @@ fn enabled() -> bool {
     std::env::var("OCI_PUSH_E2E").ok().as_deref() == Some("1")
 }
 
-#[tokio::test]
-async fn a_pushed_artifact_is_fetchable_byte_for_byte() {
-    if !enabled() {
-        eprintln!("skipping: set OCI_PUSH_E2E=1 and run a registry on {REGISTRY}");
-        return;
-    }
-
-    // A ZIP-magic payload, so the media type taken is the gtpack one rather
-    // than the octet-stream fallback — that is the interesting case.
-    let mut payload = b"PK\x03\x04".to_vec();
-    payload.extend_from_slice(b"round-trip-fixture-contents");
-
-    let reference = format!("{REGISTRY}/greentic/round-trip:v1");
+/// Push `payload` to a fresh tag, fetch it back through the normal fetch
+/// path, and assert both the bytes and the digest round-trip exactly.
+async fn assert_round_trips(tag: &str, payload: &[u8]) {
+    let reference = format!("{REGISTRY}/greentic/round-trip:{tag}");
     let client = DefaultRegistryClient::with_insecure_registries(vec![REGISTRY.to_string()]);
 
-    let pushed = push_pack_with_client(&client, &reference, &payload)
+    let pushed = push_pack_with_client(&client, &reference, payload)
         .await
         .expect("push succeeds");
 
@@ -82,4 +82,40 @@ async fn a_pushed_artifact_is_fetchable_byte_for_byte() {
         rendered
     };
     assert_eq!(pushed.digest, refetched_digest);
+}
+
+#[tokio::test]
+async fn a_squashfs_pushed_artifact_is_fetchable_byte_for_byte() {
+    if !enabled() {
+        eprintln!("skipping: set OCI_PUSH_E2E=1 and run a registry on {REGISTRY}");
+        return;
+    }
+
+    // `hsqs` — the SquashFS magic. This is the shape every real `.gtbundle`
+    // push takes (`greentic-bundle` builds bundles as SquashFS archives, see
+    // `greentic-bundle/src/build/mod.rs` and `greentic-start/src/bundle_ref.rs`),
+    // and it exercises the `application/octet-stream` fallback branch of
+    // `layer_media_type_for` — the branch the product actually uses on every
+    // push, reached by fallthrough in `select_layer` rather than preference.
+    let mut payload = b"hsqs".to_vec();
+    payload.extend_from_slice(b"round-trip-fixture-contents-squashfs");
+
+    assert_round_trips("squashfs-v1", &payload).await;
+}
+
+#[tokio::test]
+async fn a_zip_pushed_artifact_is_fetchable_byte_for_byte() {
+    if !enabled() {
+        eprintln!("skipping: set OCI_PUSH_E2E=1 and run a registry on {REGISTRY}");
+        return;
+    }
+
+    // A ZIP-magic payload, so the media type taken is the dedicated gtpack-zip
+    // one rather than the octet-stream fallback. Not what a real `.gtbundle`
+    // push produces (those are SquashFS, see the SquashFS test above), but
+    // kept to prove the ZIP branch of `layer_media_type_for` round-trips too.
+    let mut payload = b"PK\x03\x04".to_vec();
+    payload.extend_from_slice(b"round-trip-fixture-contents-zip");
+
+    assert_round_trips("zip-v1", &payload).await;
 }

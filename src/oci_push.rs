@@ -20,10 +20,20 @@ use crate::oci_packs::{
 /// A pushed artifact and the digest of its CONTENT.
 ///
 /// The digest is deliberately the content digest, not the OCI manifest digest:
-/// it is what the deployer's manifest pins as `bundle_digest`, and what the
-/// fetch side recomputes from the bytes it downloads. `oci-distribution`'s
-/// `PushResponse` carries neither — only `config_url` and `manifest_url` — so
-/// this is computed locally from the same bytes that were pushed.
+/// it belongs in the deployer's `bundle_digest` field (see
+/// `greentic-deployer/src/cli/bundle_stage.rs`, which computes the same value
+/// over the staged `.gtbundle` and fail-closes against it). `oci-distribution`'s
+/// `PushResponse` carries neither digest — only `config_url` and
+/// `manifest_url` — so this is computed locally from the same bytes that were
+/// pushed.
+///
+/// Do NOT use this digest to pin the reference as `@sha256:<digest>`:
+/// registries resolve an `@digest` suffix against the OCI **manifest**
+/// digest, which is a different value from this content digest. (For
+/// `DefaultRegistryClient`, `fetch_pack_to_cache` in `oci_packs.rs` sets
+/// `resolved_digest` from the manifest digest whenever the registry returns
+/// one, which is nearly always — the `compute_digest`-over-bytes fallback
+/// there is effectively unreachable for that client.)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PushedPack {
     /// Fully-qualified reference the artifact was pushed to.
@@ -41,7 +51,9 @@ pub struct PushedPack {
 /// Detection is by magic bytes rather than by file extension, matching
 /// `detect_bundle_archive_kind` in `greentic-start`, which prefers magic over
 /// suffix. Anything unrecognised is honestly labelled `application/octet-stream`
-/// rather than guessed at; the consumer sniffs magic bytes anyway.
+/// rather than guessed at; `detect_bundle_archive_kind`'s magic-byte sniffing
+/// covers exactly ZIP and SquashFS — which is what this path produces — and
+/// falls back to media type or filename suffix for tar / tar+gzip / tar+zstd.
 pub fn layer_media_type_for(bytes: &[u8]) -> &'static str {
     if bytes.starts_with(b"PK\x03\x04") {
         return PACK_LAYER_MEDIA_TYPE_ZIP;
@@ -69,6 +81,19 @@ pub enum OciPushError {
 /// `DefaultRegistryClient` implements both.
 #[async_trait]
 pub trait RegistryPusher: Send + Sync {
+    /// Push `bytes` as a single layer of `media_type` to `reference`.
+    ///
+    /// Deliberately pushes with no manifest annotations (`Client::push`'s
+    /// `manifest` argument is always `None` here). This is a decision, not an
+    /// oversight: signing is out of scope for this epic. The FETCH side
+    /// already expects annotations as signature material — see
+    /// `manifest_annotations` on `oci_packs::PulledImage` /
+    /// `oci_packs::ResolvedPack`, documented as carrying e.g. a
+    /// `dev.greentic.dsse` signature — so a future signed push will need
+    /// annotations here too. Because this signature is positional, adding
+    /// them later without breaking every implementor requires either an
+    /// options struct or a new trait method; do not thread an
+    /// `Option<annotations>` parameter through this signature as a quick fix.
     async fn push_artifact(
         &self,
         reference: &Reference,
@@ -107,6 +132,11 @@ impl RegistryPusher for DefaultRegistryClient {
 }
 
 /// Push `bytes` to `reference`, returning the reference and the content digest.
+///
+/// `DefaultRegistryClient`'s auth is frozen at `with_basic_auth` time and held
+/// for the client's lifetime, so a caller authenticating with a short-lived
+/// credential (e.g. a Google Artifact Registry OAuth token) must build a
+/// fresh client per push rather than reusing one across pushes.
 pub async fn push_pack_with_client<P: RegistryPusher>(
     client: &P,
     reference: &str,

@@ -654,12 +654,7 @@ impl DefaultRegistryClient {
             .iter()
             .map(|media_type| (*media_type).to_string())
             .collect::<Vec<_>>();
-        let auth = match &self.auth {
-            RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
-            RegistryClientAuth::Basic { username, password } => {
-                RegistryAuth::Basic(username.clone(), password.clone())
-            }
-        };
+        let auth = self.registry_auth();
         let (manifest, _) = self.inner.pull_manifest(reference, &auth).await?;
         if let OciManifest::Image(image_manifest) = manifest {
             extend_accepted_media_types_from_layers(

@@ -52,6 +52,17 @@ pub use oci_components::{
     ComponentResolveOptions, ComponentsExtension, ComponentsMode, DefaultRegistryClient,
     OciComponentError, OciComponentResolver, ResolvedComponent, ResolvedComponentDescriptor,
 };
+/// Re-exported so downstream crates implementing `oci_push::RegistryPusher`
+/// (or consuming `oci_packs::RegistryClient`) can reference `Reference`,
+/// `OciDistributionError`, `ParseError`, etc. without taking their own
+/// `oci-distribution` dependency and having to keep it version-locked with
+/// this crate — a bump here would otherwise silently break them.
+#[cfg(any(
+    feature = "pack-fetch",
+    feature = "oci-components",
+    feature = "runner-api"
+))]
+pub use oci_distribution;
 #[cfg(feature = "pack-fetch")]
 pub use oci_packs::{OciPackError, OciPackFetcher, PackFetchOptions, ResolvedPack};
 #[cfg(feature = "pack-fetch")]
