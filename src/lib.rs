@@ -14,6 +14,8 @@ mod http;
 pub mod oci_components;
 #[cfg(feature = "pack-fetch")]
 pub mod oci_packs;
+#[cfg(feature = "pack-push")]
+pub mod oci_push;
 #[cfg(feature = "oci-distribution")]
 pub mod oci_retry;
 #[cfg(feature = "runner-api")]
@@ -52,6 +54,17 @@ pub use oci_components::{
     ComponentResolveOptions, ComponentsExtension, ComponentsMode, DefaultRegistryClient,
     OciComponentError, OciComponentResolver, ResolvedComponent, ResolvedComponentDescriptor,
 };
+/// Re-exported so downstream crates implementing `oci_push::RegistryPusher`
+/// (or consuming `oci_packs::RegistryClient`) can reference `Reference`,
+/// `OciDistributionError`, `ParseError`, etc. without taking their own
+/// `oci-distribution` dependency and having to keep it version-locked with
+/// this crate — a bump here would otherwise silently break them.
+#[cfg(any(
+    feature = "pack-fetch",
+    feature = "oci-components",
+    feature = "runner-api"
+))]
+pub use oci_distribution;
 #[cfg(feature = "pack-fetch")]
 pub use oci_packs::{OciPackError, OciPackFetcher, PackFetchOptions, ResolvedPack};
 #[cfg(feature = "pack-fetch")]
@@ -61,6 +74,8 @@ pub use oci_packs::{
     fetch_pack_to_cache_with_options_and_client, fetch_pack_with_options,
     fetch_pack_with_options_and_client,
 };
+#[cfg(feature = "pack-push")]
+pub use oci_push::{OciPushError, PushedPack, RegistryPusher, push_pack_with_client};
 #[cfg(feature = "oci-distribution")]
 pub use oci_retry::{RetryPolicy, error_chain, is_retryable, retry_transient};
 pub use signing::{

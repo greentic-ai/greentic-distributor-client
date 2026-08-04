@@ -36,12 +36,12 @@ static DEFAULT_ACCEPTED_MANIFEST_TYPES: &[&str] = &[
 ];
 
 const PACK_LAYER_MEDIA_TYPE: &str = "application/vnd.greentic.pack+json";
-const PACK_LAYER_MEDIA_TYPE_ZIP: &str = "application/vnd.greentic.gtpack.v1+zip";
+pub(crate) const PACK_LAYER_MEDIA_TYPE_ZIP: &str = "application/vnd.greentic.gtpack.v1+zip";
 const PACK_LAYER_MEDIA_TYPE_ZIP_LEGACY: &str = "application/vnd.greentic.gtpack+zip";
 const PACK_LAYER_MEDIA_TYPE_PACK_ZIP: &str = "application/vnd.greentic.pack+zip";
 const PACK_LAYER_MEDIA_TYPE_GTPACK_TAR: &str = "application/vnd.greentic.gtpack.layer.v1+tar";
 const PACK_LAYER_MEDIA_TYPE_MARKDOWN: &str = "text/markdown";
-const PACK_LAYER_MEDIA_TYPE_OCTET_STREAM: &str = "application/octet-stream";
+pub(crate) const PACK_LAYER_MEDIA_TYPE_OCTET_STREAM: &str = "application/octet-stream";
 const PACK_LAYER_MEDIA_TYPE_JSON: &str = "application/json";
 const PACK_LAYER_MEDIA_TYPE_TAR: &str = "application/vnd.oci.image.layer.v1.tar";
 const PACK_LAYER_MEDIA_TYPE_TAR_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
@@ -353,7 +353,7 @@ fn select_layer<'a>(
     Ok(&layers[best_idx])
 }
 
-fn compute_digest(bytes: &[u8]) -> String {
+pub(crate) fn compute_digest(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let digest = hasher.finalize();
@@ -644,13 +644,23 @@ impl DefaultRegistryClient {
         self
     }
 
-    fn registry_auth(&self) -> RegistryAuth {
+    /// The `oci-distribution` auth for this client's configured credentials.
+    /// Shared by pull and push so the two can never disagree about how a
+    /// credential is presented.
+    pub(crate) fn registry_auth(&self) -> RegistryAuth {
         match &self.auth {
             RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
             RegistryClientAuth::Basic { username, password } => {
                 RegistryAuth::Basic(username.clone(), password.clone())
             }
         }
+    }
+
+    /// The underlying `oci-distribution` client, for sibling modules that need
+    /// to drive it directly (the push path).
+    #[cfg(feature = "pack-push")]
+    pub(crate) fn inner_client(&self) -> &Client {
+        &self.inner
     }
 
     async fn expand_accepted_media_types(
