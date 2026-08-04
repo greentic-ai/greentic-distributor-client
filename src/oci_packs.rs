@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+use crate::oci_retry::{RetryPolicy, retry_transient};
+
 const OCI_ARTIFACT_MANIFEST_MEDIA_TYPE: &str = "application/vnd.oci.artifact.manifest.v1+json";
 const DOCKER_MANIFEST_MEDIA_TYPE: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const DOCKER_MANIFEST_LIST_MEDIA_TYPE: &str =
@@ -532,10 +534,16 @@ pub trait RegistryClient: Send + Sync {
 }
 
 /// Registry client backed by `oci-distribution` with HTTPS enforced and anonymous pulls.
+///
+/// Transport failures are retried per [`RetryPolicy`]; see [`crate::oci_retry`]
+/// for what counts as transient. Retrying lives here rather than in
+/// [`OciPackFetcher`] so that test doubles implementing [`RegistryClient`] stay
+/// exempt and keep failing instantly.
 #[derive(Clone)]
 pub struct DefaultRegistryClient {
     inner: Client,
     auth: RegistryClientAuth,
+    retry: RetryPolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -560,6 +568,7 @@ impl RegistryClient for DefaultRegistryClient {
         Self {
             inner: Client::new(config),
             auth: RegistryClientAuth::Anonymous,
+            retry: RetryPolicy::from_env(),
         }
     }
 
@@ -575,16 +584,12 @@ impl RegistryClient for DefaultRegistryClient {
             .iter()
             .map(|media_type| media_type.as_str())
             .collect::<Vec<_>>();
-        let auth = match &self.auth {
-            RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
-            RegistryClientAuth::Basic { username, password } => {
-                RegistryAuth::Basic(username.clone(), password.clone())
-            }
-        };
-        let image = self
-            .inner
-            .pull(reference, &auth, accepted_media_type_refs)
-            .await?;
+        let auth = self.registry_auth();
+        let image = retry_transient(self.retry, &reference.to_string(), || {
+            self.inner
+                .pull(reference, &auth, accepted_media_type_refs.clone())
+        })
+        .await?;
         Ok(convert_image(image))
     }
 }
@@ -619,6 +624,7 @@ impl DefaultRegistryClient {
         Self {
             inner: Client::new(config),
             auth: RegistryClientAuth::Anonymous,
+            retry: RetryPolicy::from_env(),
         }
     }
 
@@ -631,6 +637,22 @@ impl DefaultRegistryClient {
         client
     }
 
+    /// Override the transport retry policy, which otherwise comes from
+    /// [`RetryPolicy::from_env`].
+    pub fn with_retry_policy(mut self, retry: RetryPolicy) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    fn registry_auth(&self) -> RegistryAuth {
+        match &self.auth {
+            RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
+            RegistryClientAuth::Basic { username, password } => {
+                RegistryAuth::Basic(username.clone(), password.clone())
+            }
+        }
+    }
+
     async fn expand_accepted_media_types(
         &self,
         reference: &Reference,
@@ -640,13 +662,13 @@ impl DefaultRegistryClient {
             .iter()
             .map(|media_type| (*media_type).to_string())
             .collect::<Vec<_>>();
-        let auth = match &self.auth {
-            RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
-            RegistryClientAuth::Basic { username, password } => {
-                RegistryAuth::Basic(username.clone(), password.clone())
-            }
-        };
-        let (manifest, _) = self.inner.pull_manifest(reference, &auth).await?;
+        let auth = self.registry_auth();
+        // The manifest HEAD is a separate round trip from the layer pull below
+        // and fails independently, so it needs its own retry.
+        let (manifest, _) = retry_transient(self.retry, &reference.to_string(), || {
+            self.inner.pull_manifest(reference, &auth)
+        })
+        .await?;
         if let OciManifest::Image(image_manifest) = manifest {
             extend_accepted_media_types_from_layers(
                 &mut accepted,

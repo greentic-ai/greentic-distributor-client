@@ -14,6 +14,8 @@ mod http;
 pub mod oci_components;
 #[cfg(feature = "pack-fetch")]
 pub mod oci_packs;
+#[cfg(feature = "oci-distribution")]
+pub mod oci_retry;
 #[cfg(feature = "runner-api")]
 pub mod runner_api;
 #[cfg(feature = "dist-client")]
@@ -59,6 +61,8 @@ pub use oci_packs::{
     fetch_pack_to_cache_with_options_and_client, fetch_pack_with_options,
     fetch_pack_with_options_and_client,
 };
+#[cfg(feature = "oci-distribution")]
+pub use oci_retry::{RetryPolicy, error_chain, is_retryable, retry_transient};
 pub use signing::{
     DSSE_PAYLOAD_TYPE_INTOTO, DsseEnvelope, DsseSignature, INTOTO_STATEMENT_TYPE, InTotoStatement,
     SLSA_PROVENANCE_PREDICATE_TYPE, SigningError, SlsaProvenance, Subject, TrustRoot, TrustedKey,

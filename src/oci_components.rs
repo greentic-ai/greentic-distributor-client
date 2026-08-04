@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+use crate::oci_retry::{RetryPolicy, retry_transient};
+
 const OCI_ARTIFACT_MANIFEST_MEDIA_TYPE: &str = "application/vnd.oci.artifact.manifest.v1+json";
 const DOCKER_MANIFEST_MEDIA_TYPE: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const DOCKER_MANIFEST_LIST_MEDIA_TYPE: &str =
@@ -778,10 +780,15 @@ pub trait RegistryClient: Send + Sync {
 }
 
 /// Registry client backed by `oci-distribution` with HTTPS enforced and anonymous pulls.
+///
+/// Transport failures are retried per [`RetryPolicy`]; see [`crate::oci_retry`]
+/// for what counts as transient. Test doubles implementing [`RegistryClient`]
+/// are unaffected and keep failing instantly.
 #[derive(Clone)]
 pub struct DefaultRegistryClient {
     inner: Client,
     auth: RegistryClientAuth,
+    retry: RetryPolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -806,6 +813,7 @@ impl RegistryClient for DefaultRegistryClient {
         Self {
             inner: Client::new(config),
             auth: RegistryClientAuth::Anonymous,
+            retry: RetryPolicy::from_env(),
         }
     }
 
@@ -820,10 +828,11 @@ impl RegistryClient for DefaultRegistryClient {
                 RegistryAuth::Basic(username.clone(), password.clone())
             }
         };
-        let image = self
-            .inner
-            .pull(reference, &auth, accepted_manifest_types.to_vec())
-            .await?;
+        let image = retry_transient(self.retry, &reference.to_string(), || {
+            self.inner
+                .pull(reference, &auth, accepted_manifest_types.to_vec())
+        })
+        .await?;
         Ok(convert_image(image))
     }
 }
@@ -836,6 +845,13 @@ impl DefaultRegistryClient {
             password: password.into(),
         };
         client
+    }
+
+    /// Override the transport retry policy, which otherwise comes from
+    /// [`RetryPolicy::from_env`].
+    pub fn with_retry_policy(mut self, retry: RetryPolicy) -> Self {
+        self.retry = retry;
+        self
     }
 }
 

@@ -124,6 +124,7 @@ version = "1"
 features = [
     "macros",
     "rt-multi-thread",
+    "time",
 ]
 
 [dependencies.greentic-types]
