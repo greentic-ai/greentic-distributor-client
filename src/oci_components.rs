@@ -299,6 +299,14 @@ impl<C: RegistryClient> OciComponentResolver<C> {
         }
 
         let expected_digest = parsed.digest().map(normalize_digest);
+
+        let accepted_layer_types = self
+            .opts
+            .preferred_layer_media_types
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>();
+
         if let Some(expected_digest) = expected_digest.as_ref() {
             if let Some(hit) = self.cache.try_hit(expected_digest, reference) {
                 return Ok(hit);
@@ -313,14 +321,25 @@ impl<C: RegistryClient> OciComponentResolver<C> {
             return Err(OciComponentError::OfflineTaggedReference {
                 reference: reference.to_string(),
             });
+        } else {
+            // Tag ref: ask what digest it points at before fetching anything
+            // large, so an already-cached blob can be reused. A client that
+            // cannot answer cheaply returns `None` and we fall through to the
+            // pull below — the pre-existing behaviour.
+            let resolved = self
+                .client
+                .digest_for(&parsed, &accepted_layer_types)
+                .await
+                .map_err(|source| OciComponentError::PullFailed {
+                    reference: reference.to_string(),
+                    source,
+                })?;
+            if let Some(digest) = resolved.map(|d| normalize_digest(&d))
+                && let Some(hit) = self.cache.try_hit(&digest, reference)
+            {
+                return Ok(hit);
+            }
         }
-
-        let accepted_layer_types = self
-            .opts
-            .preferred_layer_media_types
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>();
         let image = self
             .client
             .pull(&parsed, &accepted_layer_types)
@@ -775,6 +794,27 @@ pub trait RegistryClient: Send + Sync {
         reference: &Reference,
         accepted_manifest_types: &[&str],
     ) -> Result<PulledImage, OciDistributionError>;
+
+    /// Resolve a tag ref to its digest WITHOUT pulling the layers.
+    ///
+    /// This exists so a tag-pinned ref can be checked against the local cache
+    /// before its (often multi-megabyte) blob is fetched. Without it the cache
+    /// is unreachable for tag refs — `resolve_single` can only probe once it
+    /// knows a digest, and the only way to learn one was to pull the whole
+    /// component. Measured downstream in greentic-designer: 5.5 MB re-pulled
+    /// on every pack render, rewriting a byte-identical file.
+    ///
+    /// `Ok(None)` means "this client cannot answer cheaply" and is the default,
+    /// so existing implementors keep working unchanged — the caller then falls
+    /// back to the pull path. An `Err` is a real registry failure and is
+    /// propagated rather than silently treated as a miss.
+    async fn digest_for(
+        &self,
+        _reference: &Reference,
+        _accepted_manifest_types: &[&str],
+    ) -> Result<Option<String>, OciDistributionError> {
+        Ok(None)
+    }
 }
 
 /// Registry client backed by `oci-distribution` with HTTPS enforced and anonymous pulls.
@@ -814,21 +854,41 @@ impl RegistryClient for DefaultRegistryClient {
         reference: &Reference,
         accepted_manifest_types: &[&str],
     ) -> Result<PulledImage, OciDistributionError> {
-        let auth = match &self.auth {
-            RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
-            RegistryClientAuth::Basic { username, password } => {
-                RegistryAuth::Basic(username.clone(), password.clone())
-            }
-        };
         let image = self
             .inner
-            .pull(reference, &auth, accepted_manifest_types.to_vec())
+            .pull(
+                reference,
+                &self.registry_auth(),
+                accepted_manifest_types.to_vec(),
+            )
             .await?;
         Ok(convert_image(image))
+    }
+
+    /// Ask the registry which digest a tag points at, fetching only the
+    /// manifest — kilobytes, against megabytes for the layers.
+    async fn digest_for(
+        &self,
+        reference: &Reference,
+        _accepted_manifest_types: &[&str],
+    ) -> Result<Option<String>, OciDistributionError> {
+        self.inner
+            .fetch_manifest_digest(reference, &self.registry_auth())
+            .await
+            .map(Some)
     }
 }
 
 impl DefaultRegistryClient {
+    fn registry_auth(&self) -> RegistryAuth {
+        match &self.auth {
+            RegistryClientAuth::Anonymous => RegistryAuth::Anonymous,
+            RegistryClientAuth::Basic { username, password } => {
+                RegistryAuth::Basic(username.clone(), password.clone())
+            }
+        }
+    }
+
     pub fn with_basic_auth(username: impl Into<String>, password: impl Into<String>) -> Self {
         let mut client = Self::default_client();
         client.auth = RegistryClientAuth::Basic {
