@@ -308,6 +308,43 @@ async fn accepts_legacy_greentic_wasm_component_media_type() {
     assert_eq!(mock.pulls(), 1);
 }
 
+/// The descriptor path has the same hole as `resolve_refs` did: it can read
+/// the cache, but only when handed a digest. Asked for a TAG it pulls the whole
+/// component every time — even when a previous resolve already materialised
+/// exactly those bytes and all the caller wants is the metadata.
+#[tokio::test]
+async fn a_tag_ref_descriptor_is_served_from_cache_once_materialised() {
+    let temp = tempfile::tempdir().unwrap();
+    let data = b"tagged component";
+    let digest = digest_for(data);
+    let reference = "ghcr.io/greentic/components:latest";
+
+    let mut opts = options(&temp);
+    opts.allow_tags = true;
+    let mock =
+        MockRegistryClient::with_image(reference, pulled_image(data, "application/wasm", &digest));
+    let resolver = OciComponentResolver::with_client(mock.clone(), opts);
+
+    // Materialise the blob, as a real caller does before asking about it.
+    resolver
+        .resolve_refs(&extension(vec![reference]))
+        .await
+        .unwrap();
+    assert_eq!(mock.pulls(), 1);
+
+    let descriptor = resolver.resolve_descriptor(reference).await.unwrap();
+    assert_eq!(descriptor.resolved_digest, digest);
+    assert!(
+        !descriptor.fetched_from_network,
+        "the descriptor of an already-cached tag must not be re-fetched"
+    );
+    assert_eq!(
+        mock.pulls(),
+        1,
+        "asking for metadata must not re-pull the component"
+    );
+}
+
 #[tokio::test]
 async fn resolve_descriptor_does_not_require_cache_materialization() {
     let temp = tempfile::tempdir().unwrap();
