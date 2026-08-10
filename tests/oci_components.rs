@@ -19,6 +19,9 @@ use tempfile::TempDir;
 #[derive(Clone, Default)]
 struct MockRegistryClient {
     pulls: Arc<AtomicUsize>,
+    /// Cheap tag->digest lookups, counted separately from blob pulls: a
+    /// manifest query is what `digest_for` is allowed to cost.
+    digest_queries: Arc<AtomicUsize>,
     images: Arc<Mutex<HashMap<String, PulledImage>>>,
 }
 
@@ -36,12 +39,30 @@ impl MockRegistryClient {
     fn pulls(&self) -> usize {
         self.pulls.load(Ordering::SeqCst)
     }
+
+    fn digest_queries(&self) -> usize {
+        self.digest_queries.load(Ordering::SeqCst)
+    }
 }
 
 #[async_trait::async_trait]
 impl RegistryClient for MockRegistryClient {
     fn default_client() -> Self {
         Self::default()
+    }
+
+    async fn digest_for(
+        &self,
+        reference: &Reference,
+        _accepted_manifest_types: &[&str],
+    ) -> Result<Option<String>, OciDistributionError> {
+        self.digest_queries.fetch_add(1, Ordering::SeqCst);
+        Ok(self
+            .images
+            .lock()
+            .unwrap()
+            .get(&reference.whole())
+            .and_then(|image| image.digest.clone()))
     }
 
     async fn pull(
@@ -188,6 +209,54 @@ async fn offline_mode_requires_cache() {
         .await
         .unwrap_err();
     assert!(matches!(err, OciComponentError::OfflineMissing { .. }));
+}
+
+/// A tag ref resolved twice must pull once: the first resolve learns the
+/// digest, and the second must recognise that digest as already cached.
+///
+/// This is the per-render re-download seen in greentic-designer's Run Demo.
+/// Measured there: ~5.5 MB pulled from ghcr.io on EVERY render, rewriting a
+/// byte-identical file (md5 unchanged, mtime bumped), because
+/// `resolve_refs` only probes the cache when the incoming ref already carries
+/// a digest — a tag ref goes straight to `client.pull()` every time.
+#[tokio::test]
+async fn a_tag_ref_is_not_re_pulled_once_its_digest_is_cached() {
+    let temp = tempfile::tempdir().unwrap();
+    let data = b"tagged component";
+    let digest = digest_for(data);
+    let reference = "ghcr.io/greentic/components:latest";
+
+    let mut opts = options(&temp);
+    opts.allow_tags = true;
+    let mock =
+        MockRegistryClient::with_image(reference, pulled_image(data, "application/wasm", &digest));
+    let resolver = OciComponentResolver::with_client(mock.clone(), opts);
+
+    let first = resolver
+        .resolve_refs(&extension(vec![reference]))
+        .await
+        .unwrap();
+    assert!(first[0].fetched_from_network, "first resolve pulls");
+    assert_eq!(mock.pulls(), 1);
+
+    let second = resolver
+        .resolve_refs(&extension(vec![reference]))
+        .await
+        .unwrap();
+    assert!(
+        !second[0].fetched_from_network,
+        "the second resolve of the same tag must be served from cache"
+    );
+    assert_eq!(
+        mock.pulls(),
+        1,
+        "a tag whose digest is already cached must not be pulled again"
+    );
+    assert_eq!(
+        mock.digest_queries(),
+        2,
+        "each resolve asks for the digest; only the blob fetch is skipped"
+    );
 }
 
 #[tokio::test]
