@@ -231,6 +231,29 @@ impl<C: RegistryClient> OciComponentResolver<C> {
             return Err(OciComponentError::OfflineTaggedReference {
                 reference: reference.to_string(),
             });
+        } else {
+            // Same reasoning as `resolve_single`: learn the digest cheaply so a
+            // tag whose bytes are already on disk does not re-pull the whole
+            // component just to report its metadata.
+            let accepted = self
+                .opts
+                .preferred_layer_media_types
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>();
+            let resolved = self
+                .client
+                .digest_for(&parsed, &accepted)
+                .await
+                .map_err(|source| OciComponentError::PullFailed {
+                    reference: reference.to_string(),
+                    source,
+                })?;
+            if let Some(digest) = resolved.map(|d| normalize_digest(&d))
+                && let Some(hit) = self.cache.try_descriptor_hit(&digest, reference)
+            {
+                return Ok(hit);
+            }
         }
 
         let accepted_layer_types = self
