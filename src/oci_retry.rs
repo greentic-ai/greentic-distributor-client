@@ -11,10 +11,10 @@
 //! because retrying it only delays the same error.
 //!
 //! Note that [`OciDistributionError`] carries `reqwest::Error` from
-//! `oci-distribution`'s own reqwest major, which differs from the one this
+//! `oci-client`'s own reqwest major, which differs from the one this
 //! crate depends on directly. The two are distinct types, so classification
 //! works off the error variant rather than reqwest's `is_timeout()`-style
-//! predicates. That is sufficient here: `oci-distribution` maps every non-2xx
+//! predicates. That is sufficient here: `oci-client` maps every non-2xx
 //! response onto a dedicated variant, so `RequestError` only ever represents a
 //! transport-level failure.
 
@@ -23,7 +23,7 @@ use std::future::Future;
 use std::io::ErrorKind;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use oci_distribution::errors::OciDistributionError;
+use oci_client::errors::OciDistributionError;
 
 const DEFAULT_ATTEMPTS: u32 = 3;
 const DEFAULT_INITIAL_BACKOFF_MS: u64 = 250;
@@ -234,7 +234,7 @@ where
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    use oci_distribution::errors::{OciEnvelope, OciError, OciErrorCode};
+    use oci_client::errors::{OciEnvelope, OciError, OciErrorCode};
 
     use super::*;
 

@@ -7,8 +7,8 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use greentic_distributor_client::oci_push::{RegistryPusher, push_pack_with_client};
-use oci_distribution::Reference;
-use oci_distribution::errors::OciDistributionError;
+use oci_client::Reference;
+use oci_client::errors::OciDistributionError;
 
 #[derive(Default)]
 struct RecordingPusher {
