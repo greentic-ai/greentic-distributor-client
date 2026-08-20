@@ -5,14 +5,14 @@ use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use oci_distribution::Reference;
-use oci_distribution::client::{Client, ClientConfig, ClientProtocol, ImageData};
-use oci_distribution::errors::OciDistributionError;
-use oci_distribution::manifest::{
+use oci_client::Reference;
+use oci_client::client::{Client, ClientConfig, ClientProtocol, ImageData};
+use oci_client::errors::OciDistributionError;
+use oci_client::manifest::{
     IMAGE_MANIFEST_LIST_MEDIA_TYPE, IMAGE_MANIFEST_MEDIA_TYPE, OCI_IMAGE_INDEX_MEDIA_TYPE,
     OCI_IMAGE_MEDIA_TYPE, OciManifest,
 };
-use oci_distribution::secrets::RegistryAuth;
+use oci_client::secrets::RegistryAuth;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -533,7 +533,7 @@ pub trait RegistryClient: Send + Sync {
     ) -> Result<PulledImage, OciDistributionError>;
 }
 
-/// Registry client backed by `oci-distribution` with HTTPS enforced and anonymous pulls.
+/// Registry client backed by `oci-client` with HTTPS enforced and anonymous pulls.
 ///
 /// Transport failures are retried per [`RetryPolicy`]; see [`crate::oci_retry`]
 /// for what counts as transient. Retrying lives here rather than in
@@ -611,7 +611,7 @@ impl DefaultRegistryClient {
     /// `host[:port]` registries, which are pulled over plain HTTP. An empty
     /// list is byte-for-byte identical to [`DefaultRegistryClient::default_client`].
     ///
-    /// Each entry must match the registry exactly as `oci-distribution` parses
+    /// Each entry must match the registry exactly as `oci-client` parses
     /// it from the reference (e.g. `localhost:5000`,
     /// `gtc-oci-registry.gtc-local.svc.cluster.local:5000`). Intended for
     /// in-cluster / air-gapped registries that terminate plain HTTP; production
@@ -644,7 +644,7 @@ impl DefaultRegistryClient {
         self
     }
 
-    /// The `oci-distribution` auth for this client's configured credentials.
+    /// The `oci-client` auth for this client's configured credentials.
     /// Shared by pull and push so the two can never disagree about how a
     /// credential is presented.
     pub(crate) fn registry_auth(&self) -> RegistryAuth {
@@ -656,7 +656,7 @@ impl DefaultRegistryClient {
         }
     }
 
-    /// The underlying `oci-distribution` client, for sibling modules that need
+    /// The underlying `oci-client` client, for sibling modules that need
     /// to drive it directly (the push path).
     #[cfg(feature = "pack-push")]
     pub(crate) fn inner_client(&self) -> &Client {
@@ -783,12 +783,17 @@ fn convert_image(image: ImageData) -> PulledImage {
             let digest = format!("sha256:{}", layer.sha256_digest());
             PulledLayer {
                 media_type: layer.media_type,
-                data: layer.data,
+                data: layer.data.to_vec(),
                 digest: Some(digest),
             }
         })
         .collect();
-    let manifest_annotations = image.manifest.and_then(|m| m.annotations);
+    // `oci-client` returns these as a `BTreeMap`; `PulledImage` has always
+    // exposed a `HashMap` and changing that would break consumers.
+    let manifest_annotations = image
+        .manifest
+        .and_then(|m| m.annotations)
+        .map(|a| a.into_iter().collect());
     PulledImage {
         digest: image.digest,
         layers,
@@ -818,7 +823,7 @@ pub enum OciPackError {
     PullFailed {
         reference: String,
         #[source]
-        source: oci_distribution::errors::OciDistributionError,
+        source: oci_client::errors::OciDistributionError,
     },
     #[error("io error while caching `{reference}`: {source}")]
     Io {

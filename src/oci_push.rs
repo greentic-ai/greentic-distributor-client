@@ -8,9 +8,9 @@
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use oci_distribution::Reference;
-use oci_distribution::client::{Config, ImageLayer};
-use oci_distribution::errors::OciDistributionError;
+use oci_client::Reference;
+use oci_client::client::{Config, ImageLayer};
+use oci_client::errors::OciDistributionError;
 
 use crate::oci_packs::DefaultRegistryClient;
 use crate::oci_packs::{
@@ -22,7 +22,7 @@ use crate::oci_packs::{
 /// The digest is deliberately the content digest, not the OCI manifest digest:
 /// it belongs in the deployer's `bundle_digest` field (see
 /// `greentic-deployer/src/cli/bundle_stage.rs`, which computes the same value
-/// over the staged `.gtbundle` and fail-closes against it). `oci-distribution`'s
+/// over the staged `.gtbundle` and fail-closes against it). `oci-client`'s
 /// `PushResponse` carries neither digest — only `config_url` and
 /// `manifest_url` — so this is computed locally from the same bytes that were
 /// pushed.
@@ -68,7 +68,7 @@ pub enum OciPushError {
     InvalidReference {
         reference: String,
         #[source]
-        source: oci_distribution::ParseError,
+        source: oci_client::ParseError,
     },
     #[error("registry rejected the push: {0}")]
     Registry(#[from] OciDistributionError),
