@@ -539,11 +539,25 @@ pub trait RegistryClient: Send + Sync {
 /// for what counts as transient. Retrying lives here rather than in
 /// [`OciPackFetcher`] so that test doubles implementing [`RegistryClient`] stay
 /// exempt and keep failing instantly.
+///
+/// Transport and auth are independent axes, but [`Self::with_insecure_registries`]
+/// and [`Self::with_basic_auth`] are each a standalone constructor that
+/// hardcodes the OTHER axis (the former always builds `Anonymous` auth, the
+/// latter always builds an all-HTTPS transport), so neither alone can produce
+/// a client that is both authenticated and plain-HTTP. Use
+/// [`Self::with_insecure_transport`] to combine them.
 #[derive(Clone)]
 pub struct DefaultRegistryClient {
     inner: Client,
     auth: RegistryClientAuth,
     retry: RetryPolicy,
+    /// Mirrors the transport baked into `inner`'s `ClientConfig`, which
+    /// `oci_client::Client` does not expose back out. Kept purely so tests in
+    /// this module can assert the transport axis the same way
+    /// [`Self::registry_auth`] lets them assert the auth axis; no non-test
+    /// code path reads it.
+    #[allow(dead_code)]
+    protocol: ClientProtocol,
 }
 
 #[derive(Clone, Debug)]
@@ -561,14 +575,16 @@ impl Default for DefaultRegistryClient {
 #[async_trait]
 impl RegistryClient for DefaultRegistryClient {
     fn default_client() -> Self {
+        let protocol = ClientProtocol::Https;
         let config = ClientConfig {
-            protocol: ClientProtocol::Https,
+            protocol: protocol.clone(),
             ..Default::default()
         };
         Self {
             inner: Client::new(config),
             auth: RegistryClientAuth::Anonymous,
             retry: RetryPolicy::from_env(),
+            protocol,
         }
     }
 
@@ -617,14 +633,16 @@ impl DefaultRegistryClient {
     /// in-cluster / air-gapped registries that terminate plain HTTP; production
     /// registries stay HTTPS.
     pub fn with_insecure_registries(insecure_registries: Vec<String>) -> Self {
+        let protocol = protocol_for_insecure_registries(insecure_registries);
         let config = ClientConfig {
-            protocol: protocol_for_insecure_registries(insecure_registries),
+            protocol: protocol.clone(),
             ..Default::default()
         };
         Self {
             inner: Client::new(config),
             auth: RegistryClientAuth::Anonymous,
             retry: RetryPolicy::from_env(),
+            protocol,
         }
     }
 
@@ -635,6 +653,38 @@ impl DefaultRegistryClient {
             password: password.into(),
         };
         client
+    }
+
+    /// Layer a plain-HTTP (or partially plain-HTTP) transport onto a client
+    /// that already has its own auth and retry policy configured, without
+    /// discarding either.
+    ///
+    /// This exists because [`Self::with_insecure_registries`] and
+    /// [`Self::with_basic_auth`] each hardcode the axis the OTHER one owns —
+    /// the former always builds `Anonymous` auth, the latter always builds an
+    /// all-HTTPS transport — so there was previously no way to construct a
+    /// client that is both authenticated and plain-HTTP, which real
+    /// in-cluster / self-hosted registries commonly are. Chain it after
+    /// [`Self::with_basic_auth`]:
+    ///
+    /// ```
+    /// # use greentic_distributor_client::oci_packs::DefaultRegistryClient;
+    /// let client = DefaultRegistryClient::with_basic_auth("user", "pass")
+    ///     .with_insecure_transport(vec!["localhost:5000".to_string()]);
+    /// ```
+    ///
+    /// Semantics of the `insecure_registries` argument are identical to
+    /// [`Self::with_insecure_registries`]: an empty list keeps HTTPS
+    /// everywhere.
+    pub fn with_insecure_transport(mut self, insecure_registries: Vec<String>) -> Self {
+        let protocol = protocol_for_insecure_registries(insecure_registries);
+        let config = ClientConfig {
+            protocol: protocol.clone(),
+            ..Default::default()
+        };
+        self.inner = Client::new(config);
+        self.protocol = protocol;
+        self
     }
 
     /// Override the transport retry policy, which otherwise comes from
@@ -715,8 +765,9 @@ fn is_generic_tarball_media_type(media_type: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        ClientProtocol, default_pack_layer_media_types, extend_accepted_media_types_from_layers,
-        is_generic_tarball_media_type, protocol_for_insecure_registries,
+        ClientProtocol, DefaultRegistryClient, RegistryAuth, default_pack_layer_media_types,
+        extend_accepted_media_types_from_layers, is_generic_tarball_media_type,
+        protocol_for_insecure_registries,
     };
 
     #[test]
@@ -772,6 +823,71 @@ mod tests {
             accepted.contains(&"application/vnd.greentic.zain-x.bundle.v1+tar+gzip".to_string())
         );
         assert!(accepted.contains(&"application/vnd.greentic.gtpack.layer.v1+tar".to_string()));
+    }
+
+    fn assert_basic_auth(client: &DefaultRegistryClient, expected_user: &str, expected_pass: &str) {
+        match client.registry_auth() {
+            RegistryAuth::Basic(username, password) => {
+                assert_eq!(username, expected_user);
+                assert_eq!(password, expected_pass);
+            }
+            other => panic!("expected Basic auth, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn with_insecure_transport_combines_basic_auth_with_a_plain_http_registry() {
+        let registries = vec!["localhost:5000".to_string()];
+        let client = DefaultRegistryClient::with_basic_auth("user", "pass")
+            .with_insecure_transport(registries.clone());
+
+        // Auth survives layering the transport on top of it...
+        assert_basic_auth(&client, "user", "pass");
+        // ...and the transport is the one just layered on, not the all-HTTPS
+        // default `with_basic_auth` started from.
+        assert_eq!(client.protocol, ClientProtocol::HttpsExcept(registries));
+    }
+
+    #[test]
+    fn with_insecure_transport_replaces_a_previously_layered_transport() {
+        // Calling it again (e.g. after re-reading config) must replace the
+        // transport, not accumulate onto it, while still leaving auth alone.
+        let client = DefaultRegistryClient::with_basic_auth("user", "pass")
+            .with_insecure_transport(vec!["registry.internal:5000".to_string()])
+            .with_insecure_transport(vec![
+                "registry.internal:5000".to_string(),
+                "registry-two.internal:5000".to_string(),
+            ]);
+
+        assert_basic_auth(&client, "user", "pass");
+        assert_eq!(
+            client.protocol,
+            ClientProtocol::HttpsExcept(vec![
+                "registry.internal:5000".to_string(),
+                "registry-two.internal:5000".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn with_insecure_registries_stays_anonymous() {
+        // Regression guard: `with_insecure_registries` must keep hardcoding
+        // `Anonymous` auth — only the transport should move.
+        let registries = vec!["localhost:5000".to_string()];
+        let client = DefaultRegistryClient::with_insecure_registries(registries.clone());
+
+        assert!(matches!(client.registry_auth(), RegistryAuth::Anonymous));
+        assert_eq!(client.protocol, ClientProtocol::HttpsExcept(registries));
+    }
+
+    #[test]
+    fn with_basic_auth_stays_all_https() {
+        // Regression guard: `with_basic_auth` must keep hardcoding an
+        // all-HTTPS transport — only the auth should move.
+        let client = DefaultRegistryClient::with_basic_auth("user", "pass");
+
+        assert_basic_auth(&client, "user", "pass");
+        assert_eq!(client.protocol, ClientProtocol::Https);
     }
 }
 
